@@ -210,6 +210,8 @@ receipt:sha256:...
 
 Human names remain labels; content identity is canonical where appropriate (Constitution 12).
 
+**M1 implementation status.** `bat:`, `claim:`, `attack:`, and `oracle:` identities are implemented: each is SHA-256 over RFC 8785 canonical JSON of the resolved semantic component (see [bat-spec-v0.md](bat-spec-v0.md) §13). `environment.relevant` declarations are part of Bat identity; actual machine values are never inspected or hashed. Run, evidence, and receipt identities, and cache lookup, are later milestones.
+
 Conceptual run identity:
 
 ```text
@@ -322,7 +324,7 @@ Known ambiguities are recorded explicitly rather than hidden:
 
 - The oracle condition grammar is intentionally minimal in v0; its exact form is an M5 decision.
 - The adapter protocol is a direction, not a contract (M8).
-- Run-identity environment inputs: which facts are "relevant" is per-Bat declared, and the declaration mechanism is an M1 design point.
+- Run-identity environment inputs: which facts are "relevant" is per-Bat declared via `environment.relevant` (declaration mechanism resolved by M1 — see [bat-spec-v0.md](bat-spec-v0.md) §12); combining declarations with captured values for run identity is still future work.
 - Mapping rules from (execution status, oracle result) to receipt verdicts beyond the hard rules in §4 are specified in receipt-v0 §2 but will need case-law from Bat Zero.
 
 ## 13. Non-goals for v0.1

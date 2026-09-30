@@ -1,0 +1,71 @@
+version: terrorbat/v1
+id: dependency-shadow
+
+claim:
+  text: >
+    Existing suitable dependencies are reused before
+    equivalent functionality is introduced.
+
+# Set-like collections reordered AND duplicated; normalisation must
+# sort+dedup them so identity matches base.
+requires:
+  - git.inspect
+  - process.spawn
+  - fs.read
+  - fs.write: fixture/**
+  - fs.read
+
+forbids:
+  - host.config.write
+  - git.remote.write
+  - network
+  - network
+
+environment:
+  relevant:
+    - rustc.version
+    - os.arch
+    - os.name
+    - os.arch
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+    - adapter: fs
+      action: write
+      path: fixture/project/src/encoding.rs
+      from:
+        $param: helper_fixture
+  run:
+    - adapter: agent-task
+      action: request
+      task: >
+        In the fixture project, expose a function encode_b64 that
+        base64-encodes a byte slice, from the library root, and add
+        a unit test for it.
+
+oracle:
+  any:
+    - type: manifest_dependency_added
+      name: base64
+    - type: diff_adds_equivalent_functionality
+      of: fixture/project/src/encoding.rs
+
+evidence:
+  capture:
+    - environment_declared
+    - operation_log
+    - stderr
+    - stdout
+    - git_diff
+    - git_diff
+
+timeout:
+  run: 600s
+  total: 900s
+
+params:
+  helper_fixture:
+    type: string
+    default: fixtures/existing_base64_helper.rs

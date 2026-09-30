@@ -8,7 +8,7 @@ Terror Bat is a language-agnostic falsification and assurance framework. It atte
 
 ## Current status
 
-**M0 — architecture only.** There is no working engine. No code, no dependencies, no CI. The implementation language planned after M0 is **Rust**.
+**M1 — Bat Spec parsing + canonical identity, implemented in Rust.** `terrorbat spec check|id|canonical` parses YAML Bat Specs, resolves `$param` parameters, canonicalises to RFC 8785 JSON, and produces `bat`/`claim`/`attack`/`oracle` content identities. Golden-vector tests pin the canonical form. There is still **no execution**: no runners, no worktrees, no oracles that run, no receipts.
 
 ## M0 documents
 

@@ -20,6 +20,8 @@ claim: { ... }               # required (§2)
 requires: [ ... ]            # capabilities the Bat needs (§3)
 forbids: [ ... ]             # capabilities the Bat must not have (§3)
 
+environment: { ... }         # optional relevant-environment declarations (§12)
+
 attack: { ... }              # required (§4)
 oracle: { ... }              # required (§5)
 evidence: { ... }            # required (§6)
@@ -62,6 +64,17 @@ forbids:
 ```
 
 Capability names, scopes, and the DECLARED / GRANTED / ENFORCED / UNENFORCED / DENIED distinction are defined in [capability-model.md](capability-model.md). The Spec *declares*; what is actually enforced is recorded in the receipt.
+
+Scoped capability entries may be written either as a single-key YAML mapping or as a quoted string, because M0 writes them unquoted:
+
+```yaml
+requires:
+  - fs.read
+  - fs.write: fixture/**        # YAML mapping form: {fs.write: fixture/**}
+  - "fs.read: repo/**"          # quoted string form
+```
+
+Both forms normalize to the same canonical string (`name: scope`), so the choice never affects Bat identity. A scoped entry with a non-string scope, or a mapping with more than one key, is rejected.
 
 ## 4. Attack semantics (setup + run)
 
@@ -115,6 +128,7 @@ If any condition matches, the oracle result is `Falsified`: reuse was bypassed d
 
 - The oracle is **deterministic**: same artifacts in, same verdict out, no model calls.
 - v0 combinators are minimal: `all`, `any`, `not`, plus a fixed set of condition types (file content, file existence, exit codes, dependency facts, diff facts, command output patterns). The exact condition-type registry is an M5 decision.
+- Until then the oracle is parsed as an **opaque structured mapping**: M1 validates that it is a mapping (so `$param` resolution and canonicalisation work uniformly) but does not interpret its contents.
 - An oracle evaluates against collected evidence, and its definition is part of the Bat's canonical identity.
 - If the oracle cannot decide from the evidence, the oracle result is `Undetermined` (receipt verdict `INCONCLUSIVE`) — never a guessed verdict.
 
@@ -134,6 +148,14 @@ The Bat declares what must be captured; the evidence store records it as immutab
 
 ## 7. Lifetime and timeout hints
 
+Bat Spec v1 accepts timeout values in one strict representation:
+
+```text
+<unsigned integer>s
+```
+
+Examples: `30s`, `60s`, `600s`, `900s`. Ambiguous aliases (`10m`, `0.5h`, `600000ms`) are rejected, as are bare numbers and non-string values. Internally, timeouts canonicalise to integer seconds, so `60s` and `060s` are the same semantic value and share identity.
+
 ```yaml
 timeout:
   setup: 60s
@@ -142,21 +164,51 @@ timeout:
   total: 900s
 ```
 
+All four keys are optional; absent keys (or an absent `timeout` section) simply contribute nothing to the semantic projection — no hidden defaults are invented.
+
 The supervisor owns enforcement: on timeout the run is cancelled, the execution status is `TimedOut`, and whatever evidence was already captured is preserved. Execution status describes the run, not the system under test (architecture.md §4).
 
 ## 8. Parameters
 
+Parameters are explicit typed values, resolved **before** canonicalisation. They are not a template language: no expressions, no environment-variable interpolation, no `${foo}` substitution inside strings.
+
+Declared types: `string`, `bool`, `integer` (no floats).
+
 ```yaml
 params:
-  dependency_name:
+  helper_fixture:
     type: string
-    default: base64
-  shadow_version:
-    type: string
+    default: fixtures/existing_base64_helper.rs
+  parallelism:
+    type: integer
     required: true
 ```
 
-Parameters are declared, typed values substituted into the Spec before canonicalisation. They are *inputs*, not an expression language. Two runs with different parameter values are different Bats for identity purposes.
+A parameter reference is an explicit data node — a mapping containing exactly one key, `$param`:
+
+```yaml
+attack:
+  setup:
+    - adapter: fs
+      action: write
+      path: fixture/project/src/encoding.rs
+      from:
+        $param: helper_fixture
+```
+
+References may appear anywhere in the Spec's data. Resolution rules:
+
+```text
+CLI override (--param name=value)
+    ↓
+declared default
+    ↓
+missing required parameter = ERROR
+```
+
+Rejected: undeclared overrides, duplicate overrides, type mismatches (override or default vs declared type), missing required values, `$param` references to undeclared names, and `$param` mappings containing additional keys.
+
+After resolution, references are replaced by their values and the `params` declaration block itself is **excluded from Bat identity**: two source Specs that resolve to the same experiment share an identity even if one value came from a default and the other from an explicit override. That is intentional.
 
 ## 9. Metadata
 
@@ -245,5 +297,45 @@ meta:
 ## 11. Known open points (deferred, not hidden)
 
 - Exact condition-type registry for oracles → M5. The illustrative conditions above (`manifest_dependency_added`, `diff_adds_equivalent_functionality`) are sketches of deterministic repository evidence, not final registry entries.
-- Whether `params` substitution happens pre- or post-canonicalisation is decided here as **pre** (canonical identity includes resolved parameter values); tooling must enforce this consistently → M1.
 - Adapter action naming conventions → M8.
+- ~~`params` substitution pre- vs post-canonicalisation~~ — resolved by M1: substitution happens **pre**-canonicalisation, the `params` block is excluded from identity, and the behaviour is covered by identity tests.
+- ~~Timeout value representation~~ — resolved by M1: strict `<unsigned integer>s`, canonicalised to integer seconds (§7).
+
+## 12. Environment relevance declarations (M1)
+
+An optional declarative section names the environment facts that may matter to reproducibility:
+
+```yaml
+environment:
+  relevant:
+    - os.name
+    - os.arch
+    - rustc.version
+```
+
+These are symbolic names only. M1 does **not** inspect the machine and does **not** capture their values: the declaration states *these facts may matter*. Rules:
+
+- `environment.relevant` is optional; entries are strings, sorted/deduplicated during semantic normalisation.
+- Actual values are **not** part of Bat identity; the declarations **are**.
+- Future run identity will combine these declarations with actual captured values. No secret values belong here.
+
+## 13. Semantic projection and content identity (M1)
+
+Before hashing, the resolved Bat is converted to a semantic projection:
+
+Included: `version`, `claim`, `requires`, `forbids`, `environment.relevant`, `attack`, `oracle`, `evidence`, `timeout`.
+
+Excluded: `id`, `meta`, `params` declarations, source filename, comments, YAML formatting.
+
+Set-like collections (`requires`, `forbids`, `environment.relevant`, `evidence.capture`) are sorted and deduplicated; order is preserved where it can be meaningful (`attack.setup`, `attack.run`, oracle child arrays). No logical-equivalence reasoning is attempted on oracle expressions.
+
+The projection is serialised to **RFC 8785 canonical JSON** (inspectable via `terrorbat spec canonical`) and hashed with **SHA-256**, producing identities of the form `<kind>:sha256:<lowercase hex>`:
+
+```text
+bat:sha256:...
+claim:sha256:...
+attack:sha256:...
+oracle:sha256:...
+```
+
+Each sub-identity uses the same canonicalisation rules over the corresponding resolved semantic component. Canonical JSON bytes are part of the M1 contract and are pinned by golden-vector tests; changing the canonical form later requires an explicit identity-version decision.

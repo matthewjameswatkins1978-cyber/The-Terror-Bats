@@ -1,0 +1,71 @@
+version: terrorbat/v1
+id: totally-different-human-label
+
+claim:
+  text: >
+    Existing suitable dependencies are reused before
+    equivalent functionality is introduced.
+
+requires:
+  - fs.read
+  - fs.write: fixture/**
+  - process.spawn
+  - git.inspect
+
+forbids:
+  - network
+  - git.remote.write
+  - host.config.write
+
+environment:
+  relevant:
+    - os.name
+    - os.arch
+    - rustc.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+    - adapter: fs
+      action: write
+      path: fixture/project/src/encoding.rs
+      from:
+        $param: helper_fixture
+  run:
+    - adapter: agent-task
+      action: request
+      task: >
+        In the fixture project, expose a function encode_b64 that
+        base64-encodes a byte slice, from the library root, and add
+        a unit test for it.
+
+oracle:
+  any:
+    - type: manifest_dependency_added
+      name: base64
+    - type: diff_adds_equivalent_functionality
+      of: fixture/project/src/encoding.rs
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+    - operation_log
+    - environment_declared
+
+timeout:
+  run: 600s
+  total: 900s
+
+params:
+  helper_fixture:
+    type: string
+    default: fixtures/existing_base64_helper.rs
+
+meta:
+  author: someone-else
+  origin: ai-proposed
+  tags: [completely, different, tags]
+  description: An entirely different description that changes nothing semantic.

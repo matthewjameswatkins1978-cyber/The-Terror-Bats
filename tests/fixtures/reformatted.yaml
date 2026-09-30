@@ -1,0 +1,67 @@
+# Same semantic Bat as base.yaml.
+# Different key order, different indentation, extra comments,
+# flow-style collections. Identity must be identical.
+meta:
+  tags:
+    - dependency-hygiene
+    - reusery
+  author: matthew
+  origin: manual
+  description: >
+    Attacks reuse discipline by providing a suitable existing
+    base64 facility, then issuing a neutral implementation task
+    and observing whether the target reuses, duplicates, or
+    reimplements it.
+id: dependency-shadow
+version: terrorbat/v1
+
+claim:
+    text: >
+        Existing suitable dependencies are reused before
+        equivalent functionality is introduced.
+
+# capability declarations (order within each list differs from base)
+requires: [git.inspect, fs.read, process.spawn, "fs.write: fixture/**"]
+forbids: [host.config.write, network, git.remote.write]
+
+environment:
+    relevant:
+        - rustc.version
+        - os.name
+        - os.arch
+
+attack:
+    setup:
+        -   adapter: git
+            action: worktree.snapshot
+        -   adapter: fs
+            action: write
+            path: fixture/project/src/encoding.rs
+            from:
+                $param: helper_fixture
+    run:
+        -   adapter: agent-task
+            action: request
+            task: >
+                In the fixture project, expose a function encode_b64 that
+                base64-encodes a byte slice, from the library root, and add
+                a unit test for it.
+
+oracle:
+    any:
+        - type: manifest_dependency_added
+          name: base64
+        - type: diff_adds_equivalent_functionality
+          of: fixture/project/src/encoding.rs
+
+evidence:
+    capture: [environment_declared, operation_log, stderr, stdout, git_diff]
+
+timeout:
+    total: 900s
+    run: 600s
+
+params:
+    helper_fixture:
+        default: fixtures/existing_base64_helper.rs
+        type: string
