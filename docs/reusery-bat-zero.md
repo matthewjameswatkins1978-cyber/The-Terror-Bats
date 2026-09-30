@@ -2,7 +2,9 @@
 
 Reusery is the **first real specimen** of Terror Bat. Bat Zero is not a toy demo: it is the existing Reusery A / B / C\* / C experiment re-expressed as a Terror Bat, run through the Terror Bat pipeline at milestone **M6.5**, and used to decide whether Terror Bat continues at all (the kill/continue gate, architecture.md §10–§11).
 
-The purpose of Bat Zero is to **test Terror Bat itself**, using a real experiment with a known conclusion as ground truth.
+The purpose of Bat Zero is to **test Terror Bat itself**, using a prior real experiment whose conclusion is a **reference result to inspect — not a predetermined answer**.
+
+> **Bat Zero validates Terror Bat against a prior real experiment, not against a predetermined answer. The prior Reusery conclusion is evidence to inspect, not truth to preserve.**
 
 ## 1. What Bat Zero is
 
@@ -27,7 +29,7 @@ The exact Reusery procedure must be recovered from the Reusery repository before
 
 - The Reusery experiment exists and has variant arms labelled **A**, **B**, **C\***, and **C**.
 - The experiment concerns dependency-reuse discipline (reuse vs. shadow/reimplementation pressure).
-- It produced a manual conclusion that Terror Bat's authors treat as ground truth for validating Bat Zero.
+- It produced a manual conclusion. **The fact is that a conclusion was reached and recorded**; whether that conclusion was correct remains testable. It serves as a reference result / comparison baseline for Bat Zero, not as ground truth.
 - Terror Bat's own reuse-first discipline (Constitution 11) is thematically downstream of this experiment.
 
 ### Placeholders requiring Reusery inspection
@@ -35,7 +37,7 @@ The exact Reusery procedure must be recovered from the Reusery repository before
 - **[P1]** Exact definitions of arms A, B, C\*, C: initial conditions, interventions, and measurements per arm.
 - **[P2]** The target repository(ies)/fixtures the arms operated on.
 - **[P3]** What evidence the manual experiment actually recorded, and in what form.
-- **[P4]** The manual conclusion and the reasoning chain that supported it.
+- **[P4]** The prior manual conclusion and the reasoning chain that supported it — recorded as a *reference conclusion*, with its supporting evidence re-inspectable, not as an accepted truth.
 - **[P5]** Which parts of the procedure are deterministic (mechanically checkable) and which involved human or model judgement.
 - **[P6]** Environment facts the manual experiment implicitly relied on (tool versions, network availability, model identities if agents were involved).
 
@@ -60,7 +62,17 @@ Bat Zero must answer seven questions. These are the success criteria referenced 
 6. **How much Terror-Bat-specific machinery was required?** — measured honestly: lines of adapter code, custom oracle conditions, engine changes. Large numbers trigger kill criterion 2.
 7. **Did Terror Bat reduce ambiguity or simply add ceremony?** — the honest overall judgement, recorded in the Bat Zero report.
 
-The **Bat Zero report** answers all seven explicitly, with evidence references. It is the input to the kill/continue decision (architecture.md §11). A "no" on 1, 3, or 4, or a damning answer on 6 or 7, is allowed — and expected — to stop the project.
+The **Bat Zero report** answers all seven explicitly, with evidence references. It must also state which comparison outcome against the prior Reusery conclusion applies. Bat Zero is explicitly allowed to conclude any of:
+
+- Terror Bat **reproduces** the prior conclusion.
+- Terror Bat **weakens** the prior conclusion.
+- Terror Bat finds the prior evidence **insufficient**.
+- Terror Bat **contradicts** the prior conclusion.
+- The comparison is **inconclusive**.
+
+A contradiction or weakening of the prior conclusion is a legitimate — potentially valuable — Bat Zero result, provided the receipts support it. What is *not* legitimate is tuning Terror Bat until it reproduces the prior answer.
+
+The report is the input to the kill/continue decision (architecture.md §11). A "no" on 1, 3, or 4, or a damning answer on 6 or 7, is allowed — and expected — to stop the project.
 
 ## 4. Sequencing
 

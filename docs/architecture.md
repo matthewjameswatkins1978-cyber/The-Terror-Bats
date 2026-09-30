@@ -94,16 +94,22 @@ Colony
 
 The `ReceiptWriter` sits outside `BatSupervisor` so that a crashed Bat still yields a receipt describing the crash.
 
-### Outcome vocabulary
+### Execution status, oracle result, finding maturity
 
-Execution outcomes (what mechanically happened):
+Terror Bat keeps a strict separation between three conceptual layers:
 
 ```text
-Proven
-NotObserved
-Reproduced
-Suspected
-Inconclusive
+WHAT HAPPENED TO THE RUN?
+        ↓
+WHAT DID THE ORACLE DETERMINE?
+        ↓
+WHAT MAY WE RESPONSIBLY CLAIM?
+```
+
+**Execution status** — what mechanically happened to the run:
+
+```text
+Completed
 TimedOut
 Crashed
 Cancelled
@@ -112,10 +118,32 @@ Invalid
 InfrastructureError
 ```
 
-Semantics are defined in [receipt-v0.md](receipt-v0.md). Two rules are load-bearing:
+**Oracle result** — the deterministic oracle's report on whether the available evidence falsified the claim:
 
-- **A crash is not automatically evidence that the tested claim failed.** A `Crashed` outcome usually means `Inconclusive` or `InfrastructureError` unless a deterministic oracle explicitly interprets the crash against the claim.
-- **`TimedOut`, `Cancelled`, and `PolicyDenied` describe the run, not the system under test.** They must never be silently mapped to a claim verdict.
+```text
+Falsified
+NotFalsified
+Undetermined
+```
+
+`NotFalsified` means only that *this attack* did not falsify the claim. It never means the claim is universally true. Exact Rust representations of these layers are an M5 implementation decision; the semantic separation is binding now.
+
+**Finding maturity** — the epistemic lifecycle of a finding, not a process-execution status:
+
+```text
+SUSPECTED → REPRODUCED → PROVEN
+```
+
+A receipt additionally reports `NOT OBSERVED`, `INCONCLUSIVE`, `INVALID`, or `INFRASTRUCTURE ERROR` where appropriate. Semantics and the mapping from (execution status, oracle result) to receipt verdict are defined in [receipt-v0.md](receipt-v0.md).
+
+Hard rules:
+
+- A crash does not prove claim failure.
+- A timeout does not prove claim failure.
+- A policy denial does not prove claim failure.
+- Model judgement cannot create `PROVEN`.
+- `NOT OBSERVED` is not certification or correctness.
+- `TimedOut`, `Cancelled`, and `PolicyDenied` describe the run, not the system under test, and must never be silently mapped to a claim verdict.
 
 ## 5. Isolation (v0.1)
 
@@ -127,7 +155,9 @@ repository
 → destroy worktree
 ```
 
-**A Git worktree is not hostile-code containment.** It provides filesystem separation and clean rollback for well-behaved tooling. It does not stop a process from reading the host, opening network sockets, or escaping the worktree directory.
+**A Git worktree is not hostile-code containment.** It provides a disposable workspace, easy observation of repository mutations, and rollback for changes contained inside that workspace. It does not stop a process from writing outside the worktree, reading unrelated host files, contacting the network, invoking Git credential helpers, or changing host configuration.
+
+**Rollback is not enforcement.** The reversibility of workspace mutations never makes a capability ENFORCED; enforcement and reversibility are recorded separately ([capability-model.md](capability-model.md) §2).
 
 Per Constitution 19, every receipt must state exactly what isolation was and was not enforced.
 
@@ -293,7 +323,7 @@ Known ambiguities are recorded explicitly rather than hidden:
 - The oracle condition grammar is intentionally minimal in v0; its exact form is an M5 decision.
 - The adapter protocol is a direction, not a contract (M8).
 - Run-identity environment inputs: which facts are "relevant" is per-Bat declared, and the declaration mechanism is an M1 design point.
-- Mapping rules from execution outcomes to epistemic verdicts beyond the two hard rules in §4 are specified in receipt-v0 §2 but will need case-law from Bat Zero.
+- Mapping rules from (execution status, oracle result) to receipt verdicts beyond the hard rules in §4 are specified in receipt-v0 §2 but will need case-law from Bat Zero.
 
 ## 13. Non-goals for v0.1
 

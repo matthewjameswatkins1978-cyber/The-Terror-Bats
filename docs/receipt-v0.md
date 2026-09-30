@@ -8,88 +8,88 @@ Every receipt — JSON and human rendering alike — must answer:
 
 1. **What was claimed?** — the claim text and `claim:sha256:...`.
 2. **What attack was attempted?** — the Bat identity, resolved parameters, and attack summary.
-3. **What actually happened?** — the execution outcome and step-by-step operation log references.
-4. **How was it judged?** — the oracle definition identity and which conditions matched or did not.
+3. **What actually happened?** — the execution status and step-by-step operation log references.
+4. **How was it judged?** — the oracle definition identity, the oracle result, and which conditions matched or did not.
 5. **What evidence exists?** — immutable evidence references (§4).
 6. **What environment mattered?** — the *declared* relevant environment inputs, not a full machine dump.
 7. **What capabilities were requested?** — the `requires` / `forbids` declarations.
-8. **Which capabilities were actually enforced?** — per-capability state (ENFORCED vs UNENFORCED vs DENIED), honestly (capability-model.md §2).
+8. **Which capabilities were actually enforced?** — per-capability state (ENFORCED vs UNENFORCED vs DENIED), honestly, with reversibility/containment properties recorded separately from enforcement (capability-model.md §2).
 9. **What limitations remain?** — isolation guarantees and non-guarantees, known gaps, deferred judgements.
 10. **How can the run be reproduced?** — run identity, target state (commit/worktree base), adapter versions, Terror Bat version.
 
 ## 2. Epistemic states
 
+A run produces three distinct reports (architecture.md §4): the **execution status** (what mechanically happened), the **oracle result** (`Falsified` / `NotFalsified` / `Undetermined`), and the receipt's **epistemic verdict** (what may responsibly be claimed).
+
+### Finding maturity
+
+Findings progress through an epistemic lifecycle — not a process-execution status:
+
+```text
+SUSPECTED
+A plausible problem has been identified but not reproducibly established.
+
+REPRODUCED
+The relevant behaviour has been recreated under stated conditions,
+but deterministic evidence is still insufficient to establish the
+claim violation.
+
+PROVEN
+Deterministic evidence establishes that the tested claim was
+falsified under the stated conditions.
+```
+
+### Receipt verdicts
+
 A receipt carries exactly one epistemic verdict about the claim:
 
 ```text
-PROVEN
+PROVEN          — finding maturity PROVEN: deterministic evidence establishes
+                  the claim was falsified under the stated conditions.
 
-Deterministic evidence demonstrates that the tested claim
-was falsified under the stated conditions.
+REPRODUCED      — finding maturity REPRODUCED.
 
+SUSPECTED       — finding maturity SUSPECTED.
 
-REPRODUCED
+NOT OBSERVED    — the attempted attack did not falsify the claim
+                  (oracle result NotFalsified).
 
-The suspicious behaviour was reproduced, but available
-machinery cannot fully prove the interpretation.
+INCONCLUSIVE    — the experiment completed without enough information to
+                  support or reject the claim (oracle result Undetermined).
 
+INVALID         — the Bat or experiment was malformed.
 
-SUSPECTED
-
-Evidence suggests a problem but is insufficient to reproduce
-or prove it.
-
-
-NOT OBSERVED
-
-The attempted attack did not expose the claimed failure.
-
-
-INCONCLUSIVE
-
-The experiment completed without enough information to
-support or reject the claim.
-
-
-INVALID
-
-The Bat or experiment was malformed.
-
-
-INFRASTRUCTURE ERROR
-
-Terror Bat or an external dependency failed in a way that
-invalidated the experiment.
+INFRASTRUCTURE ERROR — Terror Bat or an external dependency failed in a way
+                  that invalidated the experiment.
 ```
 
 This is **not** PASS/FAIL and must never be reduced to it. `NOT OBSERVED` is not "the system is correct"; it is "this attack did not falsify the claim". Terror Bat never claims certification or trust status (Constitution 10).
 
-### Mapping from execution outcomes
+### Mapping from execution status and oracle result
 
-The execution outcome vocabulary (architecture.md §4) has eleven values; the verdict set above has seven. Mapping rules:
-
-| Execution outcome | Verdict |
-|---|---|
-| `Proven` | `PROVEN` |
-| `Reproduced` | `REPRODUCED` |
-| `Suspected` | `SUSPECTED` |
-| `NotObserved` | `NOT OBSERVED` |
-| `Invalid` | `INVALID` |
-| `InfrastructureError` | `INFRASTRUCTURE ERROR` |
-| `TimedOut`, `Crashed`, `Cancelled`, `PolicyDenied` | `INCONCLUSIVE` **by default** |
-| `Inconclusive` | `INCONCLUSIVE` |
+| Execution status | Oracle result | Receipt verdict |
+|---|---|---|
+| `Completed` | `Falsified` | `PROVEN` |
+| `Completed` | `NotFalsified` | `NOT OBSERVED` |
+| `Completed` | `Undetermined` | `INCONCLUSIVE`, or `REPRODUCED` / `SUSPECTED` where reproduction evidence exists but deterministic proof does not |
+| `TimedOut`, `Crashed`, `Cancelled`, `PolicyDenied` | `Undetermined` (or unobtainable) | `INCONCLUSIVE` **by default** |
+| `Invalid` | — | `INVALID` |
+| `InfrastructureError` | — | `INFRASTRUCTURE ERROR` |
 
 Hard rules:
 
-- A crash is **not** automatically evidence that the claim failed. `Crashed` yields `INCONCLUSIVE` unless a deterministic oracle explicitly interprets the crash artifacts against the claim and records that interpretation.
-- `TimedOut`, `Cancelled`, and `PolicyDenied` describe the run, not the system under test. The receipt must say which.
-- `SUSPECTED` verdicts must record *why* deterministic machinery could not go further (missing oracle condition, advisory-only model judgement, etc.). Model judgement alone can never produce `PROVEN`.
+- A crash does not prove claim failure. `Crashed` yields `INCONCLUSIVE` unless a deterministic oracle explicitly interprets the preserved crash artifacts against the claim and records that interpretation.
+- A timeout does not prove claim failure; neither does a policy denial. These describe the run, not the system under test, and the receipt must say which.
+- Model judgement alone can never produce `PROVEN`; `PROVEN` requires oracle result `Falsified` from deterministic machinery.
+- `SUSPECTED` and `REPRODUCED` verdicts must record *why* deterministic machinery could not go further (missing oracle condition, advisory-only model judgement, etc.).
+- `NOT OBSERVED` is not certification or correctness.
 
 ## 3. Judgement record
 
 The receipt records how the verdict was reached:
 
 - `oracle:sha256:...` — identity of the oracle definition used.
+- The oracle result (`Falsified` / `NotFalsified` / `Undetermined`).
 - Each oracle condition, its inputs (evidence references), and its individual result.
 - Whether any advisory AI judgement was consulted, clearly separated from the deterministic result and never allowed to change it.
 
@@ -119,12 +119,13 @@ Conceptual shape (exact schema fixed at M6):
   "bat": { "id": "dependency-shadow", "bat_sha": "bat:sha256:...", "params": {} },
   "claim": { "text": "...", "claim_sha": "claim:sha256:..." },
   "attack_summary": "...",
-  "execution_outcome": "Proven",
+  "execution_status": "Completed",
+  "oracle": { "oracle_sha": "oracle:sha256:...", "result": "Falsified", "conditions": [] },
   "verdict": "PROVEN",
-  "judgement": { "oracle_sha": "oracle:sha256:...", "conditions": [] },
+  "judgement": { "advisory_consulted": false },
   "evidence": [ { "kind": "git_diff", "ref": "evidence:sha256:..." } ],
   "environment": { "declared_inputs": {} },
-  "capabilities": { "requested": [], "enforced": [], "unenforced": [], "denied": [] },
+  "capabilities": { "requested": [], "enforced": [], "unenforced": [], "denied": [], "containment": [] },
   "isolation": { "mode": "git-worktree", "guarantees": [], "non_guarantees": [] },
   "limitations": [],
   "reproduction": { "target_state": "...", "adapter_versions": {}, "terrorbat_version": "..." }
@@ -141,16 +142,19 @@ Every receipt gets a human-readable rendering generated from the same data. Sket
 TERROR BAT RECEIPT — dependency-shadow            verdict: PROVEN
 Claim:  Existing suitable dependencies are reused before
         equivalent functionality is introduced.
-Attack: introduced base64 0.22 into a project already vendoring
-        base64 encoding; built; inspected dependency resolution.
-Result: shadow dependency accepted without reuse check.
-        oracle: 2/2 conditions matched (file_contains, dependency_exists)
+Attack: provided a suitable existing base64 helper, then issued a neutral
+        implementation task to the target system; observed what it built.
+Run:    completed · oracle: Falsified (2/2 conditions matched:
+        manifest_dependency_added, diff_adds_equivalent_functionality)
+Result: target bypassed the existing facility instead of reusing it.
 Evidence: git_diff 9f2c… · stdout 41ab… · stderr c77d… · log 0be3…
-Isolation: disposable git worktree (NOT hostile-code containment)
+Isolation: disposable git worktree (NOT hostile-code containment;
+        workspace mutations reversible, host/network NOT contained)
 May:     read repo, write fixture/**, spawn processes
-May not: network (unenforced — advisory), git push (denied)
-Reproduce: run 71fc @ commit e4d2…, adapters {cargo 0.3, git 0.2}, tb 0.1.0
-Limits: crash-free run; oracle covers declaration only, not intent.
+May not: network (advisory — not enforced), git push (advisory — not enforced)
+Reproduce: run 71fc @ commit e4d2…, adapters {agent-task 0.1, git 0.2}, tb 0.1.0
+Limits: crash-free run; oracle covers observable repository effects only,
+        not the target's intent.
 ```
 
 ## 7. Known open points (deferred, not hidden)

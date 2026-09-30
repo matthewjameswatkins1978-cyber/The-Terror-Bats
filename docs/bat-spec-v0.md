@@ -44,7 +44,7 @@ A claim is a falsifiable statement about the system under test. Rules:
 
 - The claim describes **system behaviour**, not test outcomes.
 - The Bat attacks the claim; the oracle judges whether the attack falsified it.
-- Claims are written so that "the attack did not falsify it" is a meaningful result (`NotObserved`), not a proof of correctness. Terror Bat never claims a system is *good* — only what attacks showed.
+- Claims are written so that "the attack did not falsify it" is a meaningful result (oracle result `NotFalsified`, receipt verdict `NOT OBSERVED`), not a proof of correctness. Terror Bat never claims a system is *good* — only what attacks showed.
 
 ## 3. Capabilities
 
@@ -65,23 +65,32 @@ Capability names, scopes, and the DECLARED / GRANTED / ENFORCED / UNENFORCED / D
 
 ## 4. Attack semantics (setup + run)
 
+An attack creates the **circumstances** in which the claim is stressed, then lets the target system act. The attack must not itself perform the violation it later treats as evidence — for a reuse claim, the Bat must not "add the forbidden dependency"; it must arrange a situation where a suitable facility already exists and then issue a **neutral task** that could plausibly reuse it.
+
 ```yaml
 attack:
   setup:
     - adapter: git
-      action: worktree.snapshot        # record clean starting state
+      action: worktree.snapshot          # record clean starting state
     - adapter: fs
       action: write
-      path: fixture/project/Cargo.toml
-      from: fixtures/shadow-cargo.toml
+      path: fixture/project/src/encoding.rs
+      from: fixtures/existing_base64_helper.rs
+      # setup PROVIDES an existing suitable facility (helper/dependency),
+      # wired into the fixture project
 
   run:
-    - adapter: cargo
-      action: add-dependency
-      args: { crate: base64, version: "0.22" }
-    - adapter: cargo
-      action: build
+    - adapter: agent-task                # the target implementation system
+      action: request
+      task: >
+        In the fixture project, expose a function encode_b64 that
+        base64-encodes a byte slice, from the library root, and add
+        a unit test for it.
+      # the task text is NEUTRAL: it must not mention the existing
+      # helper, reuse, or dependencies
 ```
+
+Observation is passive: after the target acts, the evidence (dependency diff, source diff, manifest changes, symbol/dependency facts, test results) shows whether the target reused the existing facility, introduced a duplicate dependency, reimplemented equivalent functionality, or otherwise bypassed reuse.
 
 Rules:
 
@@ -94,21 +103,20 @@ Rules:
 
 ```yaml
 oracle:
-  all:
-    - type: file_contains
-      path: fixture/project/Cargo.toml
-      pattern: '^base64 ='
-    - type: dependency_exists
-      name: base64
-      preexisting: true
+  any:
+    - type: manifest_dependency_added
+      name: base64                        # a duplicate dependency appeared
+    - type: diff_adds_equivalent_functionality
+      of: fixture/project/src/encoding.rs # the provided facility was bypassed
+                                          # by reimplementation
 ```
 
-Rules:
+If any condition matches, the oracle result is `Falsified`: reuse was bypassed despite a suitable existing facility. Rules:
 
 - The oracle is **deterministic**: same artifacts in, same verdict out, no model calls.
 - v0 combinators are minimal: `all`, `any`, `not`, plus a fixed set of condition types (file content, file existence, exit codes, dependency facts, diff facts, command output patterns). The exact condition-type registry is an M5 decision.
 - An oracle evaluates against collected evidence, and its definition is part of the Bat's canonical identity.
-- If the oracle cannot decide from the evidence, the outcome is `Inconclusive` — never a guessed verdict.
+- If the oracle cannot decide from the evidence, the oracle result is `Undetermined` (receipt verdict `INCONCLUSIVE`) — never a guessed verdict.
 
 ## 6. Evidence requirements
 
@@ -134,7 +142,7 @@ timeout:
   total: 900s
 ```
 
-The supervisor owns enforcement: on timeout the run is cancelled, the outcome is `TimedOut`, and whatever evidence was already captured is preserved. Timeouts describe the run, not the system under test (architecture.md §4).
+The supervisor owns enforcement: on timeout the run is cancelled, the execution status is `TimedOut`, and whatever evidence was already captured is preserved. Execution status describes the run, not the system under test (architecture.md §4).
 
 ## 8. Parameters
 
@@ -158,8 +166,10 @@ meta:
   origin: manual            # manual | ai-proposed | imported
   tags: [dependency-hygiene, reusery]
   description: >
-    Attacks dependency-reuse discipline by introducing a crate
-    that shadows functionality already vendored in the project.
+    Attacks reuse discipline by providing a suitable existing
+    base64 facility, then issuing a neutral implementation task
+    and observing whether the target reuses, duplicates, or
+    reimplements it.
 ```
 
 `origin: ai-proposed` marks Bats drafted by the AI discovery layer; this never changes how they are judged (deterministic oracle only).
@@ -192,23 +202,22 @@ attack:
       action: worktree.snapshot
     - adapter: fs
       action: write
-      path: fixture/project/Cargo.toml
-      from: fixtures/shadow-cargo.toml
+      path: fixture/project/src/encoding.rs
+      from: fixtures/existing_base64_helper.rs
   run:
-    - adapter: cargo
-      action: add-dependency
-      args: { crate: base64, version: "0.22" }
-    - adapter: cargo
-      action: build
+    - adapter: agent-task
+      action: request
+      task: >
+        In the fixture project, expose a function encode_b64 that
+        base64-encodes a byte slice, from the library root, and add
+        a unit test for it.
 
 oracle:
-  all:
-    - type: file_contains
-      path: fixture/project/Cargo.toml
-      pattern: '^base64 ='
-    - type: dependency_exists
+  any:
+    - type: manifest_dependency_added
       name: base64
-      preexisting: true
+    - type: diff_adds_equivalent_functionality
+      of: fixture/project/src/encoding.rs
 
 evidence:
   capture:
@@ -223,9 +232,9 @@ timeout:
   total: 900s
 
 params:
-  shadow_version:
+  helper_fixture:
     type: string
-    default: "0.22"
+    default: fixtures/existing_base64_helper.rs
 
 meta:
   author: matthew
@@ -235,6 +244,6 @@ meta:
 
 ## 11. Known open points (deferred, not hidden)
 
-- Exact condition-type registry for oracles → M5.
+- Exact condition-type registry for oracles → M5. The illustrative conditions above (`manifest_dependency_added`, `diff_adds_equivalent_functionality`) are sketches of deterministic repository evidence, not final registry entries.
 - Whether `params` substitution happens pre- or post-canonicalisation is decided here as **pre** (canonical identity includes resolved parameter values); tooling must enforce this consistently → M1.
 - Adapter action naming conventions → M8.

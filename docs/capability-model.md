@@ -39,21 +39,44 @@ Every capability relevant to a run passes through states. These are distinct and
 |---|---|
 | **DECLARED** | The Bat Spec asked for it (`requires`) or renounced it (`forbids`). |
 | **GRANTED** | The supervisor agreed the run may have it. |
-| **ENFORCED** | Machinery technically prevents use beyond the grant (e.g. worktree confinement for a scoped `fs.write`, network denied at a real boundary). |
+| **ENFORCED** | Machinery technically prevents use beyond the grant (e.g. network egress blocked at a real boundary, filesystem access confined by a sandbox). |
 | **UNENFORCED** | Granted and merely advisory: the worker was *asked* not to exceed it, but nothing technically blocks it. |
-| **DENIED** | Not granted. If the run cannot proceed without it, the outcome is `PolicyDenied`. |
+| **DENIED** | Not granted. If the run cannot proceed without it, the execution status is `PolicyDenied`. |
 
 The load-bearing rule:
 
 > **Terror Bat must never claim a capability is technically blocked when it merely asked a worker not to use it.**
 
-In v0.1 (Git-worktree isolation), most `forbids` entries are **UNENFORCED**: the worktree does not stop a determined process from touching the network or the host filesystem. The receipt records each capability's actual state (receipt-v0.md §1, question 8).
+### Authority/enforcement vs reversibility/containment
+
+These are separate properties and must be recorded separately:
+
+**Authority/enforcement** — whether machinery prevents an operation outside the permitted scope. This is what the states above describe.
+
+**Reversibility / containment** — properties such as:
+
+```text
+workspace mutations observable
+workspace mutations reversible
+host writes not contained
+network not contained
+```
+
+> **Rollback is not enforcement.**
+
+A disposable Git worktree provides a disposable workspace, easy observation of repository mutations, and rollback/reversibility for changes contained inside that workspace. It does **not** prevent a process from writing outside the worktree, reading unrelated host files, contacting the network, invoking Git credential helpers, or changing host configuration. Worktree-only isolation must therefore never classify scoped filesystem access as ENFORCED merely because mutations can later be discarded.
+
+M0.1 deliberately does not introduce a type system for containment properties; receipts state them in plain words alongside capability states.
+
+### Honesty under v0.1 worktree-only execution
+
+Under worktree-only execution, capabilities such as `network`, host filesystem access, and `git.remote.write` are normally **UNENFORCED** unless a separate technical boundary genuinely prevents them. In particular, `git.remote.write` must not be claimed as DENIED merely because credentials were not deliberately provided: Git credential helpers or host configuration may still make credentials available. Receipts must state this honestly (receipt-v0.md §1, question 8).
 
 ## 3. Enforcement reality by isolation level
 
 | Isolation | Plausibly ENFORCED | Typically UNENFORCED |
 |---|---|---|
-| Git worktree (v0.1) | Scoped `fs.write` rollback via worktree destruction; `git.remote.write` absent if no credentials configured in the worktree environment | `network`, `host.config.*`, `credential.read`, unscoped `fs.*` |
+| Git worktree (v0.1) | **None by itself** — the worktree provides observability and reversibility of workspace mutations, not enforcement | `fs.*`, `network`, `host.config.*`, `credential.read`, `git.remote.write` |
 | Container / VM (later, reused not built) | Network egress rules, filesystem mounts | Kernel-adjacent escapes |
 | WASI sandbox (later) | Capability-based file/network grants by construction | Host resource exhaustion |
 
@@ -66,16 +89,17 @@ Receipts render capabilities for humans:
 ```text
 May:
 ✓ read repository
-✓ modify disposable fixture
+✓ modify disposable fixture (mutations reversible via worktree rollback —
+  reversibility, not enforcement)
 ✓ run test processes
 
 May not:
-✗ push Git
-✗ change host configuration
-✗ read credentials
+✗ push Git (advisory — credential helpers may still permit it)
+✗ change host configuration (advisory — not technically blocked in v0.1)
+✗ read credentials (advisory — not technically blocked in v0.1)
 ```
 
-Where a "may not" is advisory only, the rendering must mark it, e.g. `✗ network (advisory — not technically blocked in v0.1)`.
+Every "may not" that is advisory only must be marked as such. Under worktree-only isolation, virtually all of them are.
 
 ## 5. Relationship to Tethers
 
@@ -85,4 +109,5 @@ Tethers may later provide stronger authority enforcement for capability decision
 
 - The exact capability registry (names, scope grammar, defaults) is provisional until M3 exercises it against real worktree runs.
 - How `process.spawn` scopes to specific adapters/commands is undecided; v0 treats spawn as coarse-grained and relies on adapter-level logging.
-- Whether a DENIED-but-required capability fails fast at supervisor start or at first use → M2 (direction: fail fast, outcome `PolicyDenied`).
+- Whether a DENIED-but-required capability fails fast at supervisor start or at first use → M2 (direction: fail fast, execution status `PolicyDenied`).
+- The exact vocabulary/format for recording containment and reversibility properties in `receipt.json` → M6; M0.1 requires only that they exist, are separate from enforcement states, and are human-readable.
