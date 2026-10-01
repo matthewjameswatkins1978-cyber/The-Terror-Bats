@@ -70,6 +70,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Check platform readiness (Git, store, worktrees, supervision).
+    Doctor {
+        /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -238,6 +247,16 @@ fn run() -> Result<u8, String> {
                 out.manifest.run_status,
                 Some(out.receipt.verdict.as_str()),
             ))
+        }
+        Command::Doctor { store, json } => {
+            let report = terrorbat::doctor::run_doctor(store);
+            if json {
+                let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+                println!("{text}");
+            } else {
+                println!("{}", terrorbat::doctor::render(&report));
+            }
+            Ok(if report.overall_ready { 0 } else { 3 })
         }
     }
 }

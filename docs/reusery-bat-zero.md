@@ -23,6 +23,18 @@ The `dependency-shadow` example in [bat-spec-v0.md](bat-spec-v0.md) §10 is an e
 
 ## 2. Facts, placeholders, assumptions
 
+> **RESOLVED (Windows First Flight).** P1–P6 were inspected and resolved
+> from the reusery.dev repository and its full history, and A1–A4 were
+> tested. Full findings, receipts, replay proof and the kill/continue
+> decision: [bat-zero-report.md](bat-zero-report.md). Headline: the
+> A/B/C\*/C arm table exists only as a self-disavowed SYNTHETIC dry-run
+> reference on an unmerged branch (`packet/13.6-live-kill-test` @
+> `af5e170`); no empirical results ever landed on main. The prior
+> conclusion is therefore disposed of as **evidence insufficient** for
+> empirical claims — the disposition its own text licenses. Bat Zero ran
+> five receipted arms against main @ `ed0243b` with zero engine changes;
+> gate decision: **CONTINUE**.
+
 The exact Reusery procedure must be recovered from the Reusery repository before the Bat Zero Spec is written (M6.5 prep). This document deliberately separates the three kinds of statement:
 
 ### Facts already known

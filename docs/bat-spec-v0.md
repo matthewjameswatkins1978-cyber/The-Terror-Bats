@@ -127,8 +127,10 @@ oracle:
 If any condition matches, the oracle result is `Falsified`: reuse was bypassed despite a suitable existing facility. Rules:
 
 - The oracle is **deterministic**: same artifacts in, same verdict out, no model calls.
-- v0 combinators are minimal: `all`, `any`, `not`, plus a fixed set of condition types (file content, file existence, exit codes, dependency facts, diff facts, command output patterns). The exact condition-type registry is an M5 decision.
-- Until then the oracle is parsed as an **opaque structured mapping**: M1 validates that it is a mapping (so `$param` resolution and canonicalisation work uniformly) but does not interpret its contents.
+- Combinators are exactly `all`, `any`, `not` with Kleene three-valued semantics — no expression language. Empty combinators evaluate to `Undetermined`, never to a verdict.
+- Shipped condition registry (First Flight): `file_exists`, `file_absent`, `text_contains`, `text_matches`, `git_diff_contains`, `git_diff_matches`, `path_changed`, `path_unchanged`, `exit_code`, `evidence_present`, `json_value_equals`, and `command` (a deterministic verifier run through the M2 supervisor inside the worktree; verifier crash/timeout is `Undetermined`, never falsification). Conditions are falsification detectors: when one fires, the claim is falsified.
+- Condition sources (`path` / `evidence` / `step` + `stream`) must name exactly one input; missing inputs yield `Undetermined`.
+- The example conditions `manifest_dependency_added` and `diff_adds_equivalent_functionality` above remain illustrative sketches — they are NOT in the registry (semantic-equivalence judgement is a non-goal); express such checks through measurable repository facts or a `command` verifier.
 - An oracle evaluates against collected evidence, and its definition is part of the Bat's canonical identity.
 - If the oracle cannot decide from the evidence, the oracle result is `Undetermined` (receipt verdict `INCONCLUSIVE`) — never a guessed verdict.
 
@@ -298,8 +300,9 @@ meta:
 
 ## 11. Known open points (deferred, not hidden)
 
-- Exact condition-type registry for oracles → M5. The illustrative conditions above (`manifest_dependency_added`, `diff_adds_equivalent_functionality`) are sketches of deterministic repository evidence, not final registry entries.
-- Adapter action naming conventions → M8.
+- ~~Exact condition-type registry for oracles~~ — resolved by M5/First Flight: the shipped registry is listed in §5. The illustrative conditions above remain sketches, not registry entries.
+- Adapter action naming conventions → M8 (First Flight built-ins: `command.run`, `fs.write`, `fs.mkdir`, `git.status`, `git.diff`, `git.rev_parse`, `git.worktree.snapshot`).
+- `evidence.capture` declarations are recorded but First Flight captures a fixed set (base snapshot, git status, git diff, step streams, operation log); declaration-driven capture selection is future work.
 - ~~`params` substitution pre- vs post-canonicalisation~~ — resolved by M1: substitution happens **pre**-canonicalisation, the `params` block is excluded from identity, and the behaviour is covered by identity tests.
 - ~~Timeout value representation~~ — resolved by M1: strict `<unsigned integer>s`, canonicalised to integer seconds (§7).
 

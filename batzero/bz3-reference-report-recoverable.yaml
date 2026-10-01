@@ -1,0 +1,60 @@
+# Bat Zero arm 3 — the synthetic reference report remains recoverable.
+#
+# Claim under attack: the dry-run reference report is gone beyond recovery.
+# The deterministic verifier asks Git itself: does the historical blob
+# still exist in the object database reachable from this repository?
+# `git cat-file -e <commit>:<path>` exits 0 when the object exists.
+# expect_exit 1 encodes the claim ("unrecoverable" => cat-file must fail).
+# The verifier exiting 0 therefore FALSIFIES the claim.
+#
+# Expected verdict: PROVEN — history on branch packet/13.6-live-kill-test
+# (af5e170) still carries benchmarks/results/report.md.
+
+version: terrorbat/v1
+
+id: bz3-reference-report-recoverable
+
+claim:
+  text: >
+    The synthetic dry-run reference benchmark report is unrecoverable
+    from the reusery.dev repository history.
+
+requires:
+  - process.spawn
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+    - git.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+
+oracle:
+  type: command
+  program: git
+  args:
+    - cat-file
+    - -e
+    - "af5e170d93c60ab6a0a038161c0b42f1f7ac7960:benchmarks/results/report.md"
+  expect_exit: 1
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  oracle: 60s
+  total: 120s
+
+meta:
+  origin: manual
+  tags: [bat-zero, reusery, history]
+  description: >
+    Bat Zero arm 3: language-neutral command verifier over Git plumbing
+    pins a historical fact as deterministic evidence.

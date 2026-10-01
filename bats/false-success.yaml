@@ -1,0 +1,66 @@
+# First Flight built-in Bat 4: false-success
+#
+# Claim:   a step whose output looks like success actually left the
+#          repository unmodified.
+# Attack:  a fixture command that prints success-looking output AND mutates
+#          a file while exiting 0. On Windows this uses cmd EXPLICITLY
+#          (program: cmd) — Terror Bat never wraps steps in an implicit
+#          shell; the Unix equivalent would be `sh -c`.
+# Oracle:  deterministic conjunction: the stdout really claims success, and
+#          the diff really contains the mutation. Prose judgement nowhere.
+#
+# Against any clean repository this yields PROVEN: output that looks green
+# is contradicted by repository evidence. This is the Terror Bat thesis in
+# one Bat: "what could still be wrong while the output says PASSED?"
+
+version: terrorbat/v1
+
+id: false-success
+
+claim:
+  text: >
+    A command step whose output reports success leaves the repository
+    unmodified.
+
+requires:
+  - process.spawn
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: cmd
+      args:
+        - /c
+        - "echo ALL TESTS PASSED & echo pwned=true> tb-false-success.txt & exit 0"
+
+oracle:
+  all:
+    - type: text_contains
+      step: run:0
+      stream: stdout
+      substring: ALL TESTS PASSED
+    - type: git_diff_contains
+      substring: pwned=true
+    - type: path_changed
+      path: tb-false-success.txt
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: builtin
+  tags: [first-flight, false-success, windows]
+  description: >
+    Windows-specific fixture (cmd is explicit intent, not an implicit
+    shell). A green-looking exit 0 with "ALL TESTS PASSED" is falsified
+    by deterministic diff/status evidence.

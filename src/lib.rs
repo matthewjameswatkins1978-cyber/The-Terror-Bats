@@ -9,6 +9,7 @@
 
 pub mod builtins;
 pub mod canonical;
+pub mod doctor;
 pub mod error;
 pub mod evidence;
 pub mod identity;

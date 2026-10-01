@@ -1,0 +1,79 @@
+# First Flight built-in Bat 3: orphan-process
+#
+# Claim:   a supervised command step that exceeds its timeout is terminated
+#          together with its whole descendant tree, and the framework
+#          records the outcome honestly.
+# Attack:  spawn a controlled multi-level process tree (parent → child →
+#          grandchild) that writes heartbeats, then let the step timeout.
+# Oracle:  none can judge the kill from inside the receipt — a TimedOut run
+#          is INCONCLUSIVE by the hard mapping rules, and that is correct.
+#          The kill itself is proven by the M2 supervision tests and by the
+#          self-attack suite (heartbeat quiescence); this Bat demonstrates
+#          the timeout + capture + cleanup path end-to-end.
+#
+# Requires a probe program. The repository's test probe works:
+#   terrorbat run bats/orphan-process.yaml --repo <repo> ^
+#     --param probe_program=<path>\target\debug\tb_probe_tree.exe
+#
+# Expected receipt: Execution TimedOut, verdict INCONCLUSIVE, cleanup
+# succeeded, and git_status/git_diff evidence showing the heartbeat file
+# existed while the tree was alive (proof the descendants really ran).
+
+version: terrorbat/v1
+
+id: orphan-process
+
+claim:
+  text: >
+    A supervised command step that exceeds its timeout is terminated
+    together with its entire descendant tree.
+
+requires:
+  - process.spawn
+  - fs.write
+  - git.inspect
+
+attack:
+  setup:
+    - adapter: fs
+      action: mkdir
+      path: heartbeats
+  run:
+    - adapter: command
+      action: run
+      program:
+        $param: probe_program
+      args:
+        - parent
+        - --heartbeat
+        - heartbeats/log.txt
+
+oracle:
+  # The heartbeat file proves the tree was alive during the run. The run
+  # will have TimedOut, so the oracle is not evaluated and the verdict is
+  # INCONCLUSIVE — deliberately. Timeout must never read as falsification.
+  type: file_exists
+  path: heartbeats/log.txt
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 3s
+  total: 60s
+
+params:
+  probe_program:
+    type: string
+    required: true
+
+meta:
+  origin: builtin
+  tags: [first-flight, process-tree, timeout]
+  description: >
+    Challenges process-tree cleanup through the full framework. Strict
+    descendant-kill proofs live in tests/supervisor.rs and
+    tests/self_attack.rs; this Bat is the end-to-end demonstration.

@@ -1,0 +1,57 @@
+# Bat Zero arm 2 — recording machinery persists on main.
+#
+# Contrast arm to BZ-1: the RESULTS are absent, but the machinery for
+# recording future empirical results honestly (Packet 7 invariant:
+# MEASURED vs MODELLED never merged) is committed on main.
+#
+# Falsification observation: any piece of the machinery missing.
+# Expected verdict: NOT OBSERVED (machinery present; not a correctness
+# certificate about the machinery's quality).
+
+version: terrorbat/v1
+
+id: bz2-recording-machinery-persists
+
+claim:
+  text: >
+    The benchmark recording machinery is committed on the main branch of
+    reusery.dev, so future empirical runs can be recorded under the
+    measured-vs-modelled invariant.
+
+requires:
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+    - git.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+
+oracle:
+  any:
+    - type: file_absent
+      path: benchmarks/README.md
+    - type: file_absent
+      path: benchmarks/schema-v1.yaml
+    - type: file_absent
+      path: internal/benchmark/record.go
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: manual
+  tags: [bat-zero, reusery]
+  description: >
+    Bat Zero arm 2: the harness/recording layer persists on main even
+    though results do not.

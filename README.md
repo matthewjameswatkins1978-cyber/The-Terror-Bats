@@ -8,10 +8,11 @@ Terror Bat is a language-agnostic falsification and assurance framework. It atte
 
 ## Current status
 
-**M2 — supervised process execution, implemented.** The OTP-inspired supervisor owns one process tree (command, env, deadline, cancellation, tree-scoped termination via process groups / Job Objects, bounded output capture). There is still **no Bat dispatch**: no worktrees, no evidence store, no oracles that run, no receipts.
+**Windows First Flight (0.1).** The full core pipeline works end to end on Windows: Bat Spec identity (M1/M1.1/M1.2), supervised process-tree execution (M2), disposable Git-worktree runs with built-in `command`/`fs`/`git` primitives (M3), content-addressed evidence store + operation log (M4), deterministic oracle engine (M5), receipts + inspect/evidence/replay CLI (M6), and `terrorbat doctor` (W1). Start with the **[First Flight guide](docs/first-flight.md)**. The core requires no cloud, API key, model, Docker, Python or Node. Caching, external adapters and AI discovery are deliberately not implemented yet.
 
-## M0 documents
+## Documents
 
+- [First Flight guide](docs/first-flight.md) — install, run, inspect, replay, Bat authoring, exit codes, limitations
 - [Architecture](docs/architecture.md) — pipeline, supervision, isolation, adapters, AI boundary
 - [Bat Spec v0](docs/bat-spec-v0.md) — the declarative Bat model
 - [Receipt v0](docs/receipt-v0.md) — epistemic states and the primary human-facing output

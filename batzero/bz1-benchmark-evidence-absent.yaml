@@ -1,0 +1,54 @@
+# Bat Zero arm 1 — benchmark evidence absent on main.
+#
+# Reference-result context (from repository inspection, not assumption):
+# the only benchmark report in reusery.dev history lives on the UNMERGED
+# branch packet/13.6-live-kill-test (commit af5e170) and is explicitly
+# labelled "[SYNTHETIC / DRY-RUN REFERENCE] ... HARNESS VERIFICATION ONLY
+# ... must NOT be cited as empirical frontier model findings".
+#
+# Falsification observation: no results file exists at the pinned main
+# commit. Expected verdict: PROVEN (the empirical-evidence gap is real and
+# mechanically established).
+
+version: terrorbat/v1
+
+id: bz1-benchmark-evidence-absent
+
+claim:
+  text: >
+    Empirical (non-dry-run) hostile-baseline benchmark results are
+    committed on the main branch of reusery.dev.
+
+requires:
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+    - os.arch
+    - git.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+
+oracle:
+  type: file_absent
+  path: benchmarks/results/report.md
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: manual
+  tags: [bat-zero, reusery, evidence-gap]
+  description: >
+    Bat Zero arm 1: mechanically establishes whether empirical benchmark
+    evidence exists at the pinned main commit.

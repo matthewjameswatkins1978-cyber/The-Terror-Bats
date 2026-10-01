@@ -1,0 +1,70 @@
+# Bat Zero arm 4 — manifest reuse discipline of reusery.dev itself.
+#
+# The original Reusery theme, turned on the Reusery product: does the
+# repository practise what it preaches — reusing mature dependencies for
+# solved infrastructure problems instead of reimplementing them?
+#
+# Falsification observation: any of the four infrastructure concerns
+# (HTTP API, PostgreSQL, migrations, MCP) missing from go.mod, i.e.
+# plausibly hand-rolled. Judged purely from manifest facts — Terror Bat
+# needs to understand nothing about Go.
+#
+# Expected verdict: NOT OBSERVED at the pinned commit (all four present).
+
+version: terrorbat/v1
+
+id: bz4-manifest-reuse-discipline
+
+claim:
+  text: >
+    reusery.dev reuses mature external dependencies for HTTP API,
+    PostgreSQL access, migrations and MCP serving instead of
+    reimplementing equivalent functionality.
+
+requires:
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+    - git.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+
+oracle:
+  any:
+    - not:
+        type: text_contains
+        path: go.mod
+        substring: danielgtaylor/huma
+    - not:
+        type: text_contains
+        path: go.mod
+        substring: jackc/pgx
+    - not:
+        type: text_contains
+        path: go.mod
+        substring: pressly/goose
+    - not:
+        type: text_contains
+        path: go.mod
+        substring: modelcontextprotocol/go-sdk
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: manual
+  tags: [bat-zero, reusery, reuse-discipline]
+  description: >
+    Bat Zero arm 4: the reuse claim tested against the reuse product's
+    own manifest, from repository facts only.

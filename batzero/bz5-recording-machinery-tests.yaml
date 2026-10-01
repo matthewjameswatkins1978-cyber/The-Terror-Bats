@@ -1,0 +1,64 @@
+# Bat Zero arm 5 — the recording machinery's own tests pass at the pin.
+#
+# A real language-ecosystem verifier: `go test` runs inside the disposable
+# worktree through the M2 supervisor. Terror Bat does not understand Go;
+# the command verifier is the language-neutral escape hatch (M5).
+#
+# `network` is declared because the Go toolchain may fetch modules from
+# the shared module cache/network; like all worktree-mode capabilities
+# this declaration is advisory (UNENFORCED), and the receipt says so.
+#
+# Expected verdict: NOT OBSERVED when the tests pass (verifier exit 0 ==
+# expect_exit). A verifier crash/timeout would be UNDETERMINED, never a
+# falsification.
+
+version: terrorbat/v1
+
+id: bz5-recording-machinery-tests
+
+claim:
+  text: >
+    The benchmark recording machinery's own unit tests pass at the
+    pinned main commit of reusery.dev.
+
+requires:
+  - process.spawn
+  - git.inspect
+  - network
+
+environment:
+  relevant:
+    - os.name
+    - os.arch
+    - git.version
+
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+
+oracle:
+  type: command
+  program: go
+  args:
+    - test
+    - ./internal/benchmark
+    - -count=1
+  expect_exit: 0
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  oracle: 600s
+  total: 900s
+
+meta:
+  origin: manual
+  tags: [bat-zero, reusery, go, command-verifier]
+  description: >
+    Bat Zero arm 5: real ecosystem test execution as a deterministic
+    verifier, judged by exit code only.

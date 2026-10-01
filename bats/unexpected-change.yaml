@@ -1,0 +1,65 @@
+# First Flight built-in Bat 2: unexpected-change
+#
+# Claim:   a nominated protected path is never modified during the attack.
+# Attack:  a fixture step deliberately attempts the forbidden mutation
+#          (this Bat is a detection self-check: the attack IS the fixture).
+# Oracle:  deterministic repository facts — porcelain status / diff evidence.
+#
+# Against any clean repository this yields PROVEN: the detection machinery
+# demonstrably catches a protected-path mutation. It works whether or not
+# the target path pre-exists (new files appear via status + intent-to-add).
+
+version: terrorbat/v1
+
+id: unexpected-change
+
+claim:
+  text: >
+    The nominated protected path is never modified during ordinary
+    work inside the target repository.
+
+requires:
+  - fs.write
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path:
+        $param: protected_path
+      text: "terrorbat-selfcheck: pwned = true\n"
+
+oracle:
+  any:
+    - type: path_changed
+      path:
+        $param: protected_path
+    - type: git_diff_contains
+      substring: "terrorbat-selfcheck"
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+params:
+  protected_path:
+    type: string
+    default: config/security.toml
+
+meta:
+  origin: builtin
+  tags: [first-flight, mutation-detection]
+  description: >
+    Detection self-check: deliberately mutates a protected path and
+    proves the deterministic oracle catches it from Git evidence alone.

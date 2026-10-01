@@ -1,0 +1,67 @@
+# First Flight built-in Bat 1: command-exit
+#
+# Claim:   the nominated verification command succeeds (exits as expected).
+# Attack:  run the verifier through the supervised command adapter.
+# Oracle:  exit code. Falsified when the command does not exit as expected.
+#
+# Proves language-neutral command use: any executable verifier works.
+# On a healthy machine this Bat yields NOT OBSERVED — which is NOT a
+# correctness certificate, only "this attack did not falsify the claim".
+
+version: terrorbat/v1
+
+id: command-exit
+
+claim:
+  text: >
+    The nominated verification command succeeds with the expected
+    exit code.
+
+requires:
+  - process.spawn
+  - git.inspect
+
+environment:
+  relevant:
+    - os.name
+    - os.arch
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program:
+        $param: verifier_program
+      args:
+        - --version
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals:
+    $param: expected_exit
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+params:
+  verifier_program:
+    type: string
+    default: git
+  expected_exit:
+    type: integer
+    default: 0
+
+meta:
+  origin: builtin
+  tags: [first-flight, command]
+  description: >
+    Runs a nominated verifier and judges it purely by exit code.
+    Windows note: no implicit shell — `program` is executed directly;
+    choose pwsh/cmd explicitly if a shell is intended.
