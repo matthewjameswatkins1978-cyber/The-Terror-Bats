@@ -98,7 +98,7 @@ impl EvidenceStore {
     /// testing a repository must not mutate it.
     pub fn default_root() -> Result<PathBuf> {
         let base = dirs::data_local_dir().ok_or_else(|| {
-            Error::spec(
+            Error::store(
                 Path::new("<store>"),
                 "cannot determine the local application data directory; pass --store <path>",
             )
@@ -110,7 +110,7 @@ impl EvidenceStore {
     pub fn open(root: &Path) -> Result<EvidenceStore> {
         for sub in ["objects", "runs", "temp"] {
             fs::create_dir_all(root.join(sub)).map_err(|e| {
-                Error::spec(root, format!("cannot create store directory `{sub}`: {e}"))
+                Error::store(root, format!("cannot create store directory `{sub}`: {e}"))
             })?;
         }
         Ok(EvidenceStore {
@@ -138,10 +138,10 @@ impl EvidenceStore {
         let dest = self.object_path(&hex);
         if dest.exists() {
             let existing = fs::read(&dest).map_err(|e| {
-                Error::spec(&dest, format!("cannot read existing evidence object: {e}"))
+                Error::store(&dest, format!("cannot read existing evidence object: {e}"))
             })?;
             if existing != bytes {
-                return Err(Error::spec(
+                return Err(Error::store(
                     &dest,
                     format!(
                         "CORRUPT evidence object: stored bytes for {hex} do not match their digest; \
@@ -159,28 +159,28 @@ impl EvidenceStore {
         ));
         {
             let mut file = fs::File::create(&tmp)
-                .map_err(|e| Error::spec(&tmp, format!("cannot create temp object: {e}")))?;
+                .map_err(|e| Error::store(&tmp, format!("cannot create temp object: {e}")))?;
             file.write_all(bytes)
                 .and_then(|_| file.flush())
                 .and_then(|_| file.sync_all())
-                .map_err(|e| Error::spec(&tmp, format!("cannot write temp object: {e}")))?;
+                .map_err(|e| Error::store(&tmp, format!("cannot write temp object: {e}")))?;
         }
         // Verify the temp bytes hash to the expected digest before publishing.
         let written =
-            fs::read(&tmp).map_err(|e| Error::spec(&tmp, format!("cannot re-read temp: {e}")))?;
+            fs::read(&tmp).map_err(|e| Error::store(&tmp, format!("cannot re-read temp: {e}")))?;
         if sha256_hex(&written) != hex {
             let _ = fs::remove_file(&tmp);
-            return Err(Error::spec(
+            return Err(Error::store(
                 &tmp,
                 "temp object failed hash verification before publish (code TB-EVIDENCE-WRITE)",
             ));
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| Error::spec(parent, format!("cannot create object dir: {e}")))?;
+                .map_err(|e| Error::store(parent, format!("cannot create object dir: {e}")))?;
         }
         fs::rename(&tmp, &dest)
-            .map_err(|e| Error::spec(&dest, format!("cannot publish object: {e}")))?;
+            .map_err(|e| Error::store(&dest, format!("cannot publish object: {e}")))?;
         Ok(EvidenceRef::from_hex(&hex))
     }
 
@@ -188,26 +188,26 @@ impl EvidenceStore {
     /// never trusted bytes.
     pub fn get(&self, evidence: &EvidenceRef) -> Result<Vec<u8>> {
         let hex = evidence.hex().ok_or_else(|| {
-            Error::spec(
+            Error::store(
                 self.root(),
                 format!("malformed evidence reference `{evidence}`"),
             )
         })?;
         if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(Error::spec(
+            return Err(Error::store(
                 self.root(),
                 format!("malformed evidence digest in `{evidence}`"),
             ));
         }
         let path = self.object_path(hex);
         let bytes = fs::read(&path).map_err(|e| {
-            Error::spec(
+            Error::store(
                 &path,
                 format!("evidence object not found or unreadable ({evidence}): {e}"),
             )
         })?;
         if sha256_hex(&bytes) != hex {
-            return Err(Error::spec(
+            return Err(Error::store(
                 &path,
                 format!(
                     "CORRUPT evidence object: bytes at {evidence} no longer match their digest \
@@ -233,13 +233,13 @@ impl EvidenceStore {
     pub fn create_run_dir(&self, execution_id: &str) -> Result<PathBuf> {
         let dir = self.run_dir(execution_id);
         if dir.exists() {
-            return Err(Error::spec(
+            return Err(Error::store(
                 &dir,
                 format!("run directory for execution `{execution_id}` already exists"),
             ));
         }
         fs::create_dir_all(&dir)
-            .map_err(|e| Error::spec(&dir, format!("cannot create run directory: {e}")))?;
+            .map_err(|e| Error::store(&dir, format!("cannot create run directory: {e}")))?;
         Ok(dir)
     }
 
@@ -264,7 +264,7 @@ impl EvidenceStore {
         let r = self.put(probe)?;
         let back = self.get(&r)?;
         if back != probe {
-            return Err(Error::spec(
+            return Err(Error::store(
                 self.root(),
                 "store self-test round trip mismatch",
             ));
@@ -284,7 +284,7 @@ impl OperationLog {
     pub fn create(run_dir: &Path) -> Result<OperationLog> {
         let path = run_dir.join("operations.jsonl");
         let file = fs::File::create(&path)
-            .map_err(|e| Error::spec(&path, format!("cannot create operation log: {e}")))?;
+            .map_err(|e| Error::store(&path, format!("cannot create operation log: {e}")))?;
         Ok(OperationLog { file, seq: 0 })
     }
 
@@ -294,7 +294,7 @@ impl OperationLog {
             .create(true)
             .append(true)
             .open(&path)
-            .map_err(|e| Error::spec(&path, format!("cannot open operation log: {e}")))?;
+            .map_err(|e| Error::store(&path, format!("cannot open operation log: {e}")))?;
         // Continue sequencing after existing lines (replay/recovery paths).
         let existing = fs::read_to_string(&path).unwrap_or_default();
         let seq = existing.lines().filter(|l| !l.trim().is_empty()).count() as u64;
@@ -314,11 +314,11 @@ impl OperationLog {
             }
         }
         let line = serde_json::to_string(&serde_json::Value::Object(entry))
-            .map_err(|e| Error::spec(Path::new("<oplog>"), format!("cannot serialise: {e}")))?;
+            .map_err(|e| Error::store(Path::new("<oplog>"), format!("cannot serialise: {e}")))?;
         writeln!(self.file, "{line}")
             .and_then(|_| self.file.flush())
             .map_err(|e| {
-                Error::spec(
+                Error::store(
                     Path::new("<oplog>"),
                     format!("cannot append operation log entry: {e}"),
                 )

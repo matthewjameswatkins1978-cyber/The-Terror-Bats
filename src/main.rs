@@ -39,9 +39,51 @@ enum Command {
         /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
         #[arg(long)]
         store: Option<PathBuf>,
-        /// Machine-readable manifest output.
+        /// Machine-readable receipt output.
         #[arg(long)]
         json: bool,
+    },
+    /// Inspect a run or receipt by execution id or receipt id.
+    Inspect {
+        /// Execution id or `receipt:sha256:...`.
+        id: String,
+        /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Evidence object operations.
+    Evidence {
+        #[command(subcommand)]
+        command: EvidenceCommand,
+    },
+    /// Replay a receipt as a new execution (the original stays immutable).
+    Replay {
+        /// Execution id or `receipt:sha256:...`.
+        id: String,
+        /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable comparison output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum EvidenceCommand {
+    /// Show an evidence object (digest verified on read).
+    Show {
+        /// `evidence:sha256:...` reference.
+        reference: String,
+        /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Write raw bytes to this file instead of printing text.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -128,79 +170,85 @@ fn run() -> Result<u8, String> {
             };
             let out = terrorbat::runner::run_bat(&opts).map_err(|e| e.to_string())?;
             if json {
-                let text =
-                    serde_json::to_string_pretty(&out.manifest).map_err(|e| e.to_string())?;
+                let text = serde_json::to_string_pretty(&out.receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                render_run_summary(&out.manifest);
+                println!("{}", terrorbat::receipt::render(&out.receipt));
             }
             Ok(terrorbat::runner::exit_code_for(
                 out.manifest.run_status,
-                None,
+                Some(out.receipt.verdict.as_str()),
+            ))
+        }
+        Command::Inspect { id, store, json } => {
+            let store = open_store(store)?;
+            let run_dir = terrorbat::receipt::locate_run(&store, &id).ok_or_else(|| {
+                format!(
+                    "no run or receipt with id `{id}` in store `{}`",
+                    store.root().display()
+                )
+            })?;
+            let receipt = terrorbat::receipt::load_receipt(&run_dir).map_err(|e| e.to_string())?;
+            if json {
+                let text = serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())?;
+                println!("{text}");
+            } else {
+                println!("{}", terrorbat::receipt::render(&receipt));
+            }
+            Ok(0)
+        }
+        Command::Evidence { command } => match command {
+            EvidenceCommand::Show {
+                reference,
+                store,
+                out,
+            } => {
+                let store = open_store(store)?;
+                let eref = terrorbat::evidence::EvidenceRef(reference.clone());
+                let bytes = store.get(&eref).map_err(|e| e.to_string())?;
+                if let Some(path) = out {
+                    std::fs::write(&path, &bytes)
+                        .map_err(|e| format!("cannot write `{}`: {e}", path.display()))?;
+                    println!("wrote {} bytes to {}", bytes.len(), path.display());
+                } else if let Ok(text) = std::str::from_utf8(&bytes) {
+                    print!("{text}");
+                    if !text.ends_with('\n') {
+                        println!();
+                    }
+                } else {
+                    println!("binary evidence (not dumped to the terminal)");
+                    println!("  reference  {reference}");
+                    println!("  bytes      {}", bytes.len());
+                    println!("  use --out <file> to extract");
+                }
+                Ok(0)
+            }
+        },
+        Command::Replay { id, store, json } => {
+            let (report, out) =
+                terrorbat::receipt::replay(&id, store).map_err(|e| e.to_string())?;
+            if json {
+                let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+                println!("{text}");
+            } else {
+                println!("{}", terrorbat::receipt::render_replay(&report));
+                println!("{}", terrorbat::receipt::render(&out.receipt));
+            }
+            Ok(terrorbat::runner::exit_code_for(
+                out.manifest.run_status,
+                Some(out.receipt.verdict.as_str()),
             ))
         }
     }
 }
 
-fn render_run_summary(m: &terrorbat::runner::RunManifest) {
-    use terrorbat::runner::{CleanupStatus, RunStatus};
-    println!("🦇 {}", m.bat.id);
-    println!();
-    println!("Target");
-    println!("  {}", m.target.root);
-    println!("  {}", short_sha(&m.target.commit));
-    println!();
-    println!("Attack");
-    for phase in ["setup", "run"] {
-        let total = m.steps.iter().filter(|s| s.phase == phase).count();
-        let done = m
-            .steps
-            .iter()
-            .filter(|s| s.phase == phase && s.status == RunStatus::Completed)
-            .count();
-        println!("  {phase:<6} {done}/{total} completed");
-    }
-    println!();
-    println!("Execution");
-    println!("  {:?}", m.run_status);
-    if let Some(bad) = m.steps.iter().find(|s| s.status != RunStatus::Completed) {
-        println!(
-            "  halted at {}[{}] {}.{}",
-            bad.phase, bad.index, bad.adapter, bad.action
-        );
-        if let Some(err) = &bad.error {
-            println!("  {err}");
-        }
-    }
-    println!();
-    println!("Evidence");
-    if let Some(d) = &m.captures.git_diff {
-        println!("  git diff    {d}");
-    }
-    if let Some(s) = &m.captures.git_status {
-        println!("  git status  {s}");
-    }
-    println!("  run dir     {}", m.run_dir);
-    println!();
-    println!("Cleanup");
-    match m.worktree.cleanup.status {
-        CleanupStatus::Succeeded => println!("  succeeded"),
-        CleanupStatus::NotAttempted => println!("  not attempted"),
-        CleanupStatus::Failed => {
-            println!("  FAILED");
-            if let Some(err) = &m.worktree.cleanup.error {
-                for line in err.lines() {
-                    println!("  {line}");
-                }
-            }
-        }
-    }
+fn open_store(store: Option<PathBuf>) -> Result<terrorbat::evidence::EvidenceStore, String> {
+    let root = match store {
+        Some(p) => p,
+        None => terrorbat::evidence::EvidenceStore::default_root().map_err(|e| e.to_string())?,
+    };
+    terrorbat::evidence::EvidenceStore::open(&root).map_err(|e| e.to_string())
 }
 
-fn short_sha(sha: &str) -> String {
-    if sha.len() > 12 {
-        sha[..12].to_string()
-    } else {
-        sha.to_string()
-    }
-}
+// Human rendering lives in terrorbat::receipt::render — one data model, one
+// truth source; the CLI does not maintain a second renderer.

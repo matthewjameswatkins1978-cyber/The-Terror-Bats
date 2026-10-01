@@ -32,6 +32,8 @@ use crate::builtins::{self, StepCtx, StepError};
 use crate::error::{Error, Result};
 use crate::evidence::{EvidenceRef, EvidenceStore, OperationLog, unix_ms};
 use crate::identity::Identities;
+use crate::oracle::{self, EvalCtx, OracleEvaluation, OracleExpr};
+use crate::receipt::{self, OracleBlock, Verdict};
 use crate::spec::{BatSpec, Capability};
 use crate::supervisor::{CancelToken, ExecutionStatus, SupervisedCommand};
 use crate::worktree::{self, TargetState};
@@ -129,6 +131,8 @@ pub struct BatBlock {
     /// Canonical semantic projection, content-addressed.
     pub canonical: EvidenceRef,
     pub param_overrides: Vec<String>,
+    /// Original Bat file path, recorded for replay fidelity.
+    pub source_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +191,14 @@ pub struct RunManifest {
     pub versions: VersionsRecord,
     pub limitations: Vec<String>,
     pub run_dir: String,
+    /// Oracle evaluation (M5); `None` when the oracle was not evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oracle: Option<OracleBlock>,
+    /// Epistemic verdict (M6); `None` only for pre-M6 manifests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<Verdict>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_id: Option<String>,
 }
 
 pub struct RunOptions {
@@ -201,6 +213,7 @@ pub struct RunOutput {
     pub execution_id: String,
     pub manifest: RunManifest,
     pub run_dir: PathBuf,
+    pub receipt: receipt::Receipt,
 }
 
 /// Execute one Bat against one target repository.
@@ -218,6 +231,7 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
     let overrides = ParamOverrides::parse(&opts.overrides)?;
     let spec = crate::spec::parse_spec(&yaml, &opts.bat_path, &overrides)?;
     let identified: IdentifiedSpec = crate::identify_spec(&spec)?;
+    let claim_text = spec.claim.text.clone();
 
     // --- target preflight: clean-only policy -----------------------------
     let target = worktree::inspect_target(&opts.repo)?;
@@ -271,6 +285,7 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
         spec_source: spec_source_ev,
         canonical: canonical_ev,
         param_overrides: opts.overrides.clone(),
+        source_path: Some(opts.bat_path.to_string_lossy().to_string()),
     };
     let target_record = TargetRecord {
         repo: opts.repo.to_string_lossy().to_string(),
@@ -301,18 +316,29 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
     let capabilities = capabilities_record(&spec);
     let mut limitations = base_limitations();
 
-    // Early-exit manifest writer: every path through this function leaves a
-    // truthful manifest behind.
+    // Early-exit finaliser: every path through this function leaves a
+    // truthful manifest and receipt behind.
     let finish = |run_status: RunStatus,
                   steps: Vec<StepRecord>,
                   captures: Captures,
                   worktree_rec: WorktreeRecord,
                   mut limitations: Vec<String>,
+                  oracle_block: Option<OracleBlock>,
                   oplog: &mut OperationLog|
      -> Result<RunOutput> {
         let finished_unix = unix_ms() as u64;
         limitations.extend(collect_truncation_notes(&steps, &captures));
-        let manifest = RunManifest {
+        let oracle_result = oracle_block.as_ref().and_then(|o| o.result);
+        let (verdict, verdict_note) = receipt::verdict_for(run_status, oracle_result);
+        if let Some(note) = verdict_note {
+            limitations.push(note);
+        }
+        let oracle_block = oracle_block.unwrap_or(OracleBlock {
+            result: None,
+            note: Some("oracle not evaluated".to_string()),
+            conditions: Vec::new(),
+        });
+        let mut manifest = RunManifest {
             version: "terrorbat/run/v0".to_string(),
             execution_id: execution_id.clone(),
             bat: clone_bat_block(&bat_block),
@@ -329,11 +355,23 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
             versions: versions.clone(),
             limitations,
             run_dir: run_dir.to_string_lossy().to_string(),
+            oracle: Some(oracle_block.clone()),
+            verdict: Some(verdict),
+            receipt_id: None,
         };
+        let final_receipt =
+            receipt::finalise(receipt::build(&manifest, &claim_text, oracle_block))?;
+        manifest.receipt_id = Some(final_receipt.receipt_id.clone());
         oplog.record(
             "run_finish",
-            json!({ "run_status": manifest.run_status, "wall_ms": manifest.wall_ms }),
+            json!({
+                "run_status": manifest.run_status,
+                "verdict": final_receipt.verdict.as_str(),
+                "receipt_id": final_receipt.receipt_id,
+                "wall_ms": manifest.wall_ms,
+            }),
         )?;
+        receipt::write_receipt(&run_dir, &final_receipt)?;
         let manifest_path = run_dir.join("manifest.json");
         let text = serde_json::to_string_pretty(&manifest)
             .map_err(|e| Error::spec(&manifest_path, format!("cannot serialise manifest: {e}")))?;
@@ -343,11 +381,38 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
             execution_id: execution_id.clone(),
             manifest,
             run_dir: run_dir.clone(),
+            receipt: final_receipt,
         })
     };
 
+    // Parse the oracle definition before any work: a malformed oracle makes
+    // the experiment Invalid up-front (M5).
+    let oracle_expr = match oracle::parse(&spec.oracle.0) {
+        Ok(expr) => expr,
+        Err(e) => {
+            oplog.record("oracle_invalid", json!({ "error": e }))?;
+            limitations.push(format!("oracle definition invalid: {e}"));
+            return finish(
+                RunStatus::Invalid,
+                Vec::new(),
+                Captures::default(),
+                WorktreeRecord {
+                    path: None,
+                    cleanup: CleanupRecord {
+                        status: CleanupStatus::NotAttempted,
+                        path: None,
+                        error: None,
+                    },
+                },
+                limitations,
+                None,
+                &mut oplog,
+            );
+        }
+    };
+
     // --- capability declaration preflight (before any work) ---------------
-    if let Err((status, message)) = preflight_capabilities(&spec) {
+    if let Err((status, message)) = preflight_capabilities(&spec, &oracle_expr) {
         oplog.record(
             "preflight_failed",
             json!({ "status": status, "error": message }),
@@ -365,6 +430,7 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
                 },
             },
             limitations,
+            None,
             &mut oplog,
         );
     }
@@ -388,6 +454,7 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
                 },
             },
             limitations,
+            None,
             &mut oplog,
         );
     }
@@ -399,6 +466,7 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
     // From here on, cleanup is always attempted and its result recorded.
     let result = execute_attack(
         &spec,
+        &oracle_expr,
         &spec_dir,
         &wt_path,
         &target,
@@ -417,13 +485,19 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
             wt_path.display()
         ));
     }
-    let (run_status, steps, captures) = result?;
+    let (run_status, steps, captures, evaluation) = result?;
+    let oracle_block = evaluation.map(|ev| OracleBlock {
+        result: Some(ev.result),
+        note: None,
+        conditions: ev.conditions,
+    });
     finish(
         run_status,
         steps,
         captures,
         worktree_rec,
         limitations,
+        oracle_block,
         &mut oplog,
     )
 }
@@ -431,16 +505,24 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
 /// Everything that happens inside the worktree: snapshot, setup, run,
 /// post-state capture. Always returns records, even on mechanical failure —
 /// observable state is preserved long enough for collection.
-#[allow(clippy::type_complexity)]
+// Internal, cohesive orchestration function: bundling its parameters into a
+// context struct would only move the eight fields, not remove them.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn execute_attack(
     spec: &BatSpec,
+    oracle_expr: &OracleExpr,
     spec_dir: &Path,
     wt_path: &Path,
     target: &TargetState,
     store: &EvidenceStore,
     oplog: &mut OperationLog,
     limitations: &mut Vec<String>,
-) -> Result<(RunStatus, Vec<StepRecord>, Captures)> {
+) -> Result<(
+    RunStatus,
+    Vec<StepRecord>,
+    Captures,
+    Option<OracleEvaluation>,
+)> {
     let mut steps: Vec<StepRecord> = Vec::new();
     let mut captures = Captures::default();
     let attack_start = Instant::now();
@@ -510,7 +592,47 @@ fn execute_attack(
     // that observable state survives long enough to be collected.
     capture_post_state(wt_path, target, store, oplog, &mut captures, limitations)?;
 
-    Ok((run_status, steps, captures))
+    // Oracle evaluation happens while the worktree still exists (command
+    // verifiers may need it); cleanup follows afterwards, never before.
+    // Only a Completed run is judged — a crashed or timed-out run describes
+    // itself, and its verdict comes from the hard mapping rules.
+    let mut evaluation: Option<OracleEvaluation> = None;
+    if run_status == RunStatus::Completed {
+        let oracle_budget = spec
+            .timeout
+            .as_ref()
+            .and_then(|t| t.oracle)
+            .map(|t| Duration::from_secs(t.0));
+        let total_remaining =
+            total_budget.map(|b| (attack_start + b).saturating_duration_since(Instant::now()));
+        let verifier_deadline = match (oracle_budget, total_remaining) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => Some(Duration::from_secs(120)),
+        };
+        let mut verifier_steps: Vec<StepRecord> = Vec::new();
+        let eval = {
+            let mut ectx = EvalCtx {
+                store,
+                worktree: wt_path,
+                spec_dir,
+                steps: &steps,
+                captures: &captures,
+                verifier_deadline,
+                verifier_steps: &mut verifier_steps,
+            };
+            oracle::evaluate(oracle_expr, &mut ectx)
+        };
+        oplog.record(
+            "oracle_evaluated",
+            json!({ "result": eval.result, "conditions": eval.conditions.len() }),
+        )?;
+        steps.extend(verifier_steps);
+        evaluation = Some(eval);
+    }
+
+    Ok((run_status, steps, captures, evaluation))
 }
 
 /// Execute one ordered phase. Returns `Some(status)` when a mechanical
@@ -757,7 +879,10 @@ fn cleanup_worktree(repo_root: &Path, wt_path: &Path, oplog: &mut OperationLog) 
 /// Declaration/policy preflight: every step's required capability must be
 /// declared; a capability the Bat itself forbids is a policy denial. This is
 /// declaration checking only — arbitrary child programs remain UNENFORCED.
-fn preflight_capabilities(spec: &BatSpec) -> std::result::Result<(), (RunStatus, String)> {
+fn preflight_capabilities(
+    spec: &BatSpec,
+    oracle_expr: &OracleExpr,
+) -> std::result::Result<(), (RunStatus, String)> {
     let declared = capability_names(&spec.requires);
     let forbidden = capability_names(&spec.forbids);
     for (phase, steps) in [
@@ -794,6 +919,26 @@ fn preflight_capabilities(spec: &BatSpec) -> std::result::Result<(), (RunStatus,
                     ),
                 ));
             }
+        }
+    }
+    // Command verifiers inside the oracle also spawn processes; the same
+    // declaration rule applies before any worktree work.
+    if oracle::uses_command_verifier(oracle_expr) {
+        if forbidden.contains("process.spawn") {
+            return Err((
+                RunStatus::PolicyDenied,
+                "the oracle command verifier requires capability `process.spawn`, which this \
+                 Bat explicitly forbids"
+                    .to_string(),
+            ));
+        }
+        if !declared.contains("process.spawn") {
+            return Err((
+                RunStatus::Invalid,
+                "the oracle command verifier requires capability `process.spawn`, which is \
+                 not declared in `requires`"
+                    .to_string(),
+            ));
         }
     }
     Ok(())
@@ -917,6 +1062,7 @@ fn clone_bat_block(b: &BatBlock) -> BatBlock {
         spec_source: b.spec_source.clone(),
         canonical: b.canonical.clone(),
         param_overrides: b.param_overrides.clone(),
+        source_path: b.source_path.clone(),
     }
 }
 
@@ -924,12 +1070,17 @@ fn clone_bat_block(b: &BatBlock) -> BatBlock {
 /// 0 = completed, no proven falsification; 1 = PROVEN falsification;
 /// 2 = invalid request/spec/policy; 3 = infrastructure/inconclusive.
 pub fn exit_code_for(run_status: RunStatus, verdict: Option<&str>) -> u8 {
+    // Spec/policy problems keep exit 2 even though their verdict reads
+    // INVALID/INCONCLUSIVE: the CLI classifies the request problem, while the
+    // receipt remains authoritative for epistemic state.
+    if matches!(run_status, RunStatus::Invalid | RunStatus::PolicyDenied) {
+        return 2;
+    }
     if let Some(v) = verdict {
         match v {
             "PROVEN" => return 1,
             "NOT OBSERVED" => return 0,
-            "INVALID" => return 2,
-            _ => return 3, // INCONCLUSIVE / INFRASTRUCTURE ERROR
+            _ => return 3, // INCONCLUSIVE / INFRASTRUCTURE ERROR / INVALID
         }
     }
     match run_status {

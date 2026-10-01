@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error("invalid Bat Spec in `{path}`: {message}")]
     Spec { path: PathBuf, message: String },
+
+    #[error("evidence store error at `{path}`: {message}")]
+    Store { path: PathBuf, message: String },
 }
 
 impl Error {
@@ -25,6 +28,13 @@ impl Error {
 
     pub fn spec(path: &Path, message: impl Into<String>) -> Self {
         Error::Spec {
+            path: path.to_path_buf(),
+            message: message.into(),
+        }
+    }
+
+    pub fn store(path: &Path, message: impl Into<String>) -> Self {
+        Error::Store {
             path: path.to_path_buf(),
             message: message.into(),
         }
