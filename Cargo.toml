@@ -2,15 +2,20 @@
 name = "terrorbat"
 version = "0.1.0"
 edition = "2024"
-description = "Terror Bat — falsification and assurance framework (M1: Bat Spec parsing and content identity)"
+description = "Terror Bat — falsification and assurance framework (M2: supervised process execution)"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats"
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
+command-group = "5.0"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1.3"
 serde_json = "1"
 serde_json_canonicalizer = "0.3"
 sha2 = "0.11"
 thiserror = "2"
+
+[target.'cfg(unix)'.dependencies]
+# Probe-only: ignoring SIGTERM in the graceful-termination test helper.
+libc = "0.2"

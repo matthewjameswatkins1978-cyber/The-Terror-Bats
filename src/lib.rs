@@ -9,6 +9,7 @@ pub mod identity;
 pub mod params;
 pub mod spec;
 pub mod strict;
+pub mod supervisor;
 
 use std::path::Path;
 

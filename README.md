@@ -8,7 +8,7 @@ Terror Bat is a language-agnostic falsification and assurance framework. It atte
 
 ## Current status
 
-**M1 — Bat Spec parsing + canonical identity, implemented in Rust.** `terrorbat spec check|id|canonical` parses YAML Bat Specs, resolves `$param` parameters, canonicalises to RFC 8785 JSON, and produces `bat`/`claim`/`attack`/`oracle` content identities. Golden-vector tests pin the canonical form. There is still **no execution**: no runners, no worktrees, no oracles that run, no receipts.
+**M2 — supervised process execution, implemented.** The OTP-inspired supervisor owns one process tree (command, env, deadline, cancellation, tree-scoped termination via process groups / Job Objects, bounded output capture). There is still **no Bat dispatch**: no worktrees, no evidence store, no oracles that run, no receipts.
 
 ## M0 documents
 
