@@ -1,16 +1,24 @@
-//! Terror Bat M1 — Bat Spec parsing, parameter resolution, canonicalisation,
-//! and content identity. Nothing executes in M1.
+//! Terror Bat — falsification and assurance framework.
 //!
-//! Pipeline: PARSE → RESOLVE → CANONICALISE → IDENTIFY.
+//! M1: Bat Spec parsing / parameter resolution / canonicalisation / identity.
+//! M2: supervised process-tree execution.
+//! M3+M4: disposable worktree execution, built-in primitives, durable
+//! content-addressed evidence and operation log.
+//!
+//! Pipeline: PARSE → RESOLVE → CANONICALISE → IDENTIFY → RUN → EVIDENCE.
 
+pub mod builtins;
 pub mod canonical;
 pub mod error;
+pub mod evidence;
 pub mod identity;
 pub mod numeric;
 pub mod params;
+pub mod runner;
 pub mod spec;
 pub mod strict;
 pub mod supervisor;
+pub mod worktree;
 
 use std::path::Path;
 

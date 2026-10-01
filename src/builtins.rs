@@ -1,0 +1,409 @@
+//! Built-in execution primitives (M3): `command`, `fs`, `git`.
+//!
+//! These are internal built-ins, not the M8 external adapter protocol.
+//!
+//! Honesty: built-in path validation is not a hostile-code sandbox. An
+//! arbitrary child program spawned by `command.run` can still access host
+//! paths; only Terror Bat's own built-in operations are confined.
+
+use std::collections::BTreeMap;
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
+
+use serde_json::Value;
+
+use crate::supervisor::{
+    CancelToken, ExecutionStatus, StdinPolicy, SupervisedCommand, SupervisedOutcome,
+};
+
+/// Why a built-in step could not be dispatched or execute. The runner maps
+/// these to run statuses: `Policy` → PolicyDenied, `Malformed` → Invalid,
+/// `Io` → InfrastructureError.
+#[derive(Debug)]
+pub enum StepError {
+    /// A known-disallowed operation was refused (path escape, forbidden rev).
+    Policy(String),
+    /// The step payload is malformed for this adapter action.
+    Malformed(String),
+    /// Infrastructure failure (filesystem/OS error).
+    Io(String),
+}
+
+impl std::fmt::Display for StepError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StepError::Policy(m) => write!(f, "{m}"),
+            StepError::Malformed(m) => write!(f, "{m}"),
+            StepError::Io(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+pub type StepResult<T> = std::result::Result<T, StepError>;
+
+/// Capability required by a built-in adapter action (declaration preflight).
+pub fn required_capability(adapter: &str, action: &str) -> Option<&'static str> {
+    match (adapter, action) {
+        ("command", "run") => Some("process.spawn"),
+        ("fs", "write") => Some("fs.write"),
+        ("fs", "mkdir") => Some("fs.write"),
+        ("git", "status") => Some("git.inspect"),
+        ("git", "diff") => Some("git.inspect"),
+        ("git", "rev_parse") => Some("git.inspect"),
+        ("git", "worktree.snapshot") => Some("git.inspect"),
+        _ => None,
+    }
+}
+
+/// Validate a worktree-relative path and resolve it inside the worktree.
+///
+/// Rejects absolute/drive paths, UNC paths, rooted paths, `..` traversal
+/// escaping the worktree, and (via canonicalisation of the existing prefix)
+/// junction/symlink escapes. Built-in validation only — see module docs.
+pub fn resolve_in_worktree(worktree: &Path, rel: &str) -> StepResult<PathBuf> {
+    let policy = |m: String| StepError::Policy(m);
+    if rel.is_empty() {
+        return Err(policy(
+            "empty path is not a valid worktree-relative path".into(),
+        ));
+    }
+    let p = Path::new(rel);
+    if p.has_root() || p.is_absolute() || rel.starts_with("\\\\") || rel.starts_with("//") {
+        return Err(policy(format!(
+            "path `{rel}` is absolute, rooted, or UNC; worktree-relative paths only"
+        )));
+    }
+    if rel.contains(':') {
+        return Err(policy(format!(
+            "path `{rel}` contains a drive or alternate-data-stream separator"
+        )));
+    }
+    // Lexical normalisation with `..` escape rejection.
+    let mut normalized = PathBuf::new();
+    let mut depth: isize = 0;
+    for component in p.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(policy(format!(
+                        "path `{rel}` escapes the worktree via `..` traversal"
+                    )));
+                }
+                normalized.pop();
+            }
+            Component::Normal(part) => {
+                depth += 1;
+                normalized.push(part);
+            }
+            other => {
+                return Err(policy(format!(
+                    "path `{rel}` contains an unsupported component ({other:?})"
+                )));
+            }
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        return Err(policy(format!(
+            "path `{rel}` resolves to the worktree root; not an actionable target"
+        )));
+    }
+    // Junction/symlink escape guard: canonicalise the deepest existing prefix
+    // and require containment within the canonical worktree.
+    let canonical_root = worktree.canonicalize().map_err(|e| {
+        StepError::Io(format!(
+            "cannot canonicalise worktree root `{}`: {e}",
+            worktree.display()
+        ))
+    })?;
+    let parts: Vec<_> = normalized.components().collect();
+    let mut probe = canonical_root.clone();
+    let mut existing_len = 0;
+    for (i, part) in parts.iter().enumerate() {
+        probe.push(part);
+        if probe.exists() {
+            existing_len = i + 1;
+        } else {
+            break;
+        }
+    }
+    let mut existing = canonical_root.clone();
+    for part in &parts[..existing_len] {
+        existing.push(part);
+    }
+    if existing_len > 0 {
+        let canonical_existing = existing.canonicalize().map_err(|e| {
+            StepError::Io(format!(
+                "cannot canonicalise existing path prefix `{}` (junction/symlink?): {e}",
+                existing.display()
+            ))
+        })?;
+        if !canonical_existing.starts_with(&canonical_root) {
+            return Err(policy(format!(
+                "path `{rel}` resolves through a junction/symlink to `{}` which is outside \
+                 the worktree; refusing (built-in validation only, not a sandbox)",
+                canonical_existing.display()
+            )));
+        }
+        existing = canonical_existing;
+    }
+    let mut final_path = existing;
+    for part in &parts[existing_len..] {
+        final_path.push(part);
+    }
+    Ok(final_path)
+}
+
+/// Mechanical outcome of one built-in step.
+#[derive(Debug, Clone)]
+pub struct StepOutcome {
+    pub status: ExecutionStatus,
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
+    pub stdout: Vec<u8>,
+    pub stdout_total: u64,
+    pub stderr: Vec<u8>,
+    pub stderr_total: u64,
+    pub wall_time: Duration,
+    pub error: Option<String>,
+}
+
+impl StepOutcome {
+    fn from_supervised(out: SupervisedOutcome) -> StepOutcome {
+        StepOutcome {
+            status: out.status,
+            exit_code: out.exit_code,
+            signal: out.signal,
+            stdout: out.stdout.bytes,
+            stdout_total: out.stdout.total_bytes,
+            stderr: out.stderr.bytes,
+            stderr_total: out.stderr.total_bytes,
+            wall_time: out.wall_time,
+            error: out.error,
+        }
+    }
+}
+
+/// Execution context handed to built-in steps.
+pub struct StepCtx<'a> {
+    /// Disposable worktree root; all built-in relative paths resolve here.
+    pub worktree: &'a Path,
+    /// Directory of the Bat Spec file (for `from:` fixture reads).
+    pub spec_dir: &'a Path,
+    /// Remaining wall-clock budget for this step, if any.
+    pub deadline: Option<Duration>,
+}
+
+fn payload_string(payload: &BTreeMap<String, Value>, key: &str) -> Option<String> {
+    payload.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+fn malformed(msg: impl Into<String>) -> StepError {
+    StepError::Malformed(msg.into())
+}
+
+/// Dispatch one built-in step. Unknown adapters/actions are malformed input
+/// (the runner also rejects them earlier during capability preflight).
+pub fn dispatch(
+    adapter: &str,
+    action: &str,
+    payload: &BTreeMap<String, Value>,
+    ctx: &StepCtx<'_>,
+) -> StepResult<StepOutcome> {
+    match (adapter, action) {
+        ("command", "run") => command_run(payload, ctx),
+        ("fs", "write") => fs_write(payload, ctx),
+        ("fs", "mkdir") => fs_mkdir(payload, ctx),
+        ("git", "status") => git_capture(ctx, &["status", "--porcelain"]),
+        ("git", "diff") => git_capture(ctx, &["diff", "HEAD"]),
+        ("git", "rev_parse") => git_rev_parse(payload, ctx),
+        ("git", "worktree.snapshot") => git_snapshot(ctx),
+        _ => Err(malformed(format!(
+            "unknown built-in adapter action `{adapter}.{action}`"
+        ))),
+    }
+}
+
+/// `command.run`: direct process spawn through M2. No implicit shell: the
+/// program is executed as given; a shell requires explicit intent
+/// (`program: pwsh`, ...). A nonzero exit is Completed, not a step failure —
+/// the oracle decides what it means.
+fn command_run(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let program = payload_string(payload, "program")
+        .ok_or_else(|| malformed("command.run requires a string `program` field"))?;
+    let mut cmd = SupervisedCommand::new(OsString::from(&program));
+    if let Some(args) = payload.get("args") {
+        let list = args
+            .as_array()
+            .ok_or_else(|| malformed("command.run `args` must be a list of strings"))?;
+        for arg in list {
+            let s = arg
+                .as_str()
+                .ok_or_else(|| malformed("command.run `args` entries must be strings"))?;
+            cmd.args.push(OsString::from(s));
+        }
+    }
+    cmd.cwd = match payload_string(payload, "cwd") {
+        Some(rel) => Some(resolve_in_worktree(ctx.worktree, &rel)?),
+        None => Some(ctx.worktree.to_path_buf()),
+    };
+    if let Some(stdin) = payload_string(payload, "stdin") {
+        cmd.stdin = StdinPolicy::Bytes(stdin.into_bytes());
+    }
+    if let Some(env) = payload.get("env") {
+        let map = env
+            .as_object()
+            .ok_or_else(|| malformed("command.run `env` must be a mapping of strings"))?;
+        for (k, v) in map {
+            let value = v
+                .as_str()
+                .ok_or_else(|| malformed(format!("env value for `{k}` must be a string")))?;
+            cmd.env.set.push((OsString::from(k), OsString::from(value)));
+        }
+    }
+    cmd.deadline = ctx.deadline;
+    let out = crate::supervisor::run(&cmd, &CancelToken::new());
+    Ok(StepOutcome::from_supervised(out))
+}
+
+/// `fs.write`: exactly one of `text` / `from`. `from` resolves against the
+/// Bat Spec directory (host-side read-only fixture source); `path` is
+/// worktree-relative. Creates parent directories as needed.
+fn fs_write(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.write requires a string `path`"))?;
+    let text = payload.get("text").and_then(Value::as_str);
+    let from = payload.get("from").and_then(Value::as_str);
+    let bytes = match (text, from) {
+        (Some(t), None) => t.as_bytes().to_vec(),
+        (None, Some(f)) => {
+            let source = ctx.spec_dir.join(f);
+            std::fs::read(&source).map_err(|e| {
+                StepError::Io(format!(
+                    "cannot read fixture `from: {f}` relative to the Bat Spec directory `{}`: {e}",
+                    ctx.spec_dir.display()
+                ))
+            })?
+        }
+        (Some(_), Some(_)) => {
+            return Err(malformed(
+                "fs.write accepts exactly one of `text` or `from`, not both",
+            ));
+        }
+        (None, None) => {
+            return Err(malformed(
+                "fs.write requires exactly one of `text` or `from`",
+            ));
+        }
+    };
+    let target = resolve_in_worktree(ctx.worktree, &rel)?;
+    let start = std::time::Instant::now();
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            StepError::Io(format!(
+                "cannot create parent directories for `{}`: {e}",
+                parent.display()
+            ))
+        })?;
+    }
+    std::fs::write(&target, &bytes)
+        .map_err(|e| StepError::Io(format!("cannot write `{}`: {e}", target.display())))?;
+    Ok(StepOutcome {
+        status: ExecutionStatus::Completed,
+        exit_code: Some(0),
+        signal: None,
+        stdout: Vec::new(),
+        stdout_total: 0,
+        stderr: Vec::new(),
+        stderr_total: 0,
+        wall_time: start.elapsed(),
+        error: None,
+    })
+}
+
+/// `fs.mkdir`.
+fn fs_mkdir(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.mkdir requires a string `path`"))?;
+    let target = resolve_in_worktree(ctx.worktree, &rel)?;
+    let start = std::time::Instant::now();
+    std::fs::create_dir_all(&target).map_err(|e| {
+        StepError::Io(format!(
+            "cannot create directory `{}`: {e}",
+            target.display()
+        ))
+    })?;
+    Ok(StepOutcome {
+        status: ExecutionStatus::Completed,
+        exit_code: Some(0),
+        signal: None,
+        stdout: Vec::new(),
+        stdout_total: 0,
+        stderr: Vec::new(),
+        stderr_total: 0,
+        wall_time: start.elapsed(),
+        error: None,
+    })
+}
+
+fn git_capture(ctx: &StepCtx<'_>, args: &[&str]) -> StepResult<StepOutcome> {
+    let mut cmd = SupervisedCommand::new(OsString::from("git"));
+    cmd.args = args.iter().map(OsString::from).collect();
+    cmd.cwd = Some(ctx.worktree.to_path_buf());
+    cmd.deadline = ctx.deadline;
+    let out = crate::supervisor::run(&cmd, &CancelToken::new());
+    Ok(StepOutcome::from_supervised(out))
+}
+
+fn git_rev_parse(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rev = payload_string(payload, "rev").unwrap_or_else(|| "HEAD".to_string());
+    // Constrained local revision inspection: reject anything that looks like
+    // a remote operation or option injection.
+    if rev.starts_with('-') || rev.contains("..") || rev.contains(':') {
+        return Err(StepError::Policy(format!(
+            "git.rev_parse `rev` must be a plain local revision, got `{rev}`"
+        )));
+    }
+    git_capture(ctx, &["rev-parse", &rev])
+}
+
+/// `git.worktree.snapshot`: HEAD + status in stable porcelain form, as two
+/// separate supervised Git calls merged deterministically (no shell chaining).
+fn git_snapshot(ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let head = git_capture(ctx, &["rev-parse", "HEAD"])?;
+    let status = git_capture(ctx, &["status", "--porcelain"])?;
+    let mut stdout = head.stdout.clone();
+    if head.status == ExecutionStatus::Completed && head.exit_code == Some(0) {
+        stdout.extend_from_slice(b"--- status --porcelain ---\n");
+        stdout.extend_from_slice(&status.stdout);
+    }
+    let failed = head.status != ExecutionStatus::Completed
+        || head.exit_code != Some(0)
+        || status.status != ExecutionStatus::Completed
+        || status.exit_code != Some(0);
+    let stdout_total = stdout.len() as u64;
+    Ok(StepOutcome {
+        status: if failed {
+            ExecutionStatus::InfrastructureError
+        } else {
+            ExecutionStatus::Completed
+        },
+        exit_code: if failed { None } else { Some(0) },
+        signal: None,
+        stdout,
+        stdout_total,
+        stderr: status.stderr.clone(),
+        stderr_total: status.stderr_total,
+        wall_time: head.wall_time + status.wall_time,
+        error: if failed {
+            head.error
+                .clone()
+                .or(status.error.clone())
+                .or_else(|| Some("git.worktree.snapshot: underlying git command failed".into()))
+        } else {
+            None
+        },
+    })
+}
