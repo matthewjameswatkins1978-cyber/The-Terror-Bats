@@ -184,6 +184,8 @@ impl<'de> Deserialize<'de> for TimeoutSeconds {
 }
 
 /// Parse the strict `<unsigned integer>s` timeout form into integer seconds.
+/// Values must additionally fit the Bat Spec v1 JCS-safe integer range —
+/// vastly beyond any practical timeout, so this restricts nothing real.
 pub fn parse_timeout_seconds(raw: &str) -> std::result::Result<u64, String> {
     let bad = || {
         format!(
@@ -195,7 +197,15 @@ pub fn parse_timeout_seconds(raw: &str) -> std::result::Result<u64, String> {
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return Err(bad());
     }
-    digits.parse::<u64>().map_err(|_| bad())
+    let value: u64 = digits.parse().map_err(|_| bad())?;
+    if crate::numeric::is_safe_u64(value) {
+        Ok(value)
+    } else {
+        Err(format!(
+            "invalid timeout `{raw}`: {}",
+            crate::numeric::unsafe_message(value)
+        ))
+    }
 }
 
 /// Free-form metadata block (labels only; excluded from Bat identity).

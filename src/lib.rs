@@ -6,6 +6,7 @@
 pub mod canonical;
 pub mod error;
 pub mod identity;
+pub mod numeric;
 pub mod params;
 pub mod spec;
 pub mod strict;

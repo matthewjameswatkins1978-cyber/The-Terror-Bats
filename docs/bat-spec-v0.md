@@ -174,7 +174,7 @@ Parameters are explicit typed values, resolved **before** canonicalisation. They
 
 Declared types: `string`, `bool`, `integer` (no floats).
 
-Integers are restricted to the JCS-safe range `−9007199254740991..=9007199254740991` (±(2⁵³ − 1)). Canonical JSON number semantics use IEEE-754 double precision, so two distinct integers outside this range could canonicalise to the same number and share a content hash. Out-of-range defaults and overrides are rejected before canonicalisation — never silently converted, rounded, or stringified. If Terror Bat later needs arbitrary-size integers, they will use an explicitly versioned string-backed type.
+Integers — declared defaults, CLI overrides, and resolved values alike — must fit the JCS-safe range `−9007199254740991..=9007199254740991` (±(2⁵³ − 1)), enforced through the same shared boundary as all other spec integers (see §13). Out-of-range values are rejected before canonicalisation.
 
 ```yaml
 params:
@@ -332,6 +332,34 @@ Excluded: `id`, `meta`, `params` declarations, source filename, comments, YAML f
 Set-like collections (`requires`, `forbids`, `environment.relevant`, `evidence.capture`) are sorted and deduplicated; order is preserved where it can be meaningful (`attack.setup`, `attack.run`, oracle child arrays). No logical-equivalence reasoning is attempted on oracle expressions.
 
 Source-level strictness: Bat Specs are JSON-shaped structured data, so **all YAML mapping keys must be strings** — at the top level and inside opaque adapter payloads, oracle structures, and `meta`. Non-string keys (`1:`, `true:`, `null:`, compound keys) are rejected rather than silently stringified, so `1: value` can never be identical to `"1": value`. Note the parser resolves unquoted scalars with YAML 1.1-style rules: unquoted `y`, `n`, `yes`, `no`, `on`, `off` as keys resolve to booleans and are therefore rejected — quote them (`"on": ...`) to use them as strings.
+
+### Integers
+
+Exact integers in semantic data:
+
+```text
+-9007199254740991..=9007199254740991
+```
+
+Larger exact values must be strings. This applies everywhere integers can reach the parsed document: opaque adapter payloads, oracle structures, nested mappings and sequences, timeout values, and parameter defaults/overrides/resolved values. (The top-level `params` declaration block is checked by parameter validation with identical bounds and parameter-aware errors; the boundary itself is defined once, in one shared location.)
+
+### Floating-point values
+
+Finite IEEE-754/JCS values may exist in opaque structured payloads. `NaN` and infinities are rejected (by the YAML parser itself).
+
+Opaque numeric data follows JCS / IEEE-754 semantics. Exact integers larger than ±(2^53−1) must be represented as strings.
+
+### Parameters
+
+Remain:
+
+```text
+string
+bool
+integer
+```
+
+No float parameter type.
 
 The projection is serialised to **RFC 8785 canonical JSON** (inspectable via `terrorbat spec canonical`) and hashed with **SHA-256**, producing identities of the form `<kind>:sha256:<lowercase hex>`:
 

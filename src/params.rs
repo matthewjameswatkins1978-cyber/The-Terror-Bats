@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::error::{Error, Result};
+use crate::numeric;
 
 /// Declared parameter types (M1: no floats).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -32,23 +33,17 @@ impl ParamType {
     }
 }
 
-/// Bat Spec v1 integers are restricted to the JCS-safe range ±(2^53 − 1).
-/// Canonical JSON number semantics use IEEE-754 double precision, so two
-/// distinct integers outside this range could canonicalise to the same
-/// number and share a content hash. Out-of-range values are rejected before
-/// canonicalisation — never silently converted, rounded, or stringified.
-pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
-pub const MIN_SAFE_INTEGER: i64 = -9_007_199_254_740_991;
-
 fn check_safe_integer(name: &str, value: i64, path: &Path) -> Result<ParamValue> {
-    if (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value) {
+    if numeric::is_safe_i64(value) {
         Ok(ParamValue::Int(value))
     } else {
         Err(Error::spec(
             path,
             format!(
                 "parameter `{name}` value {value} exceeds the Bat Spec v1 safe integer range \
-                 ({MIN_SAFE_INTEGER}..={MAX_SAFE_INTEGER})"
+                 ({}..={})",
+                numeric::MIN_SAFE_INTEGER,
+                numeric::MAX_SAFE_INTEGER
             ),
         ))
     }
