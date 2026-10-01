@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::params::{self, ParamOverrides};
+use crate::strict::StrictValue;
 
 /// The only Bat Spec schema version accepted by M1.
 pub const SPEC_VERSION: &str = "terrorbat/v1";
@@ -206,10 +207,14 @@ pub struct Meta(pub Value);
 ///
 /// `serde-saphyr` rejects duplicate mapping keys and multiple YAML documents
 /// by default; anchors/aliases resolve to the same typed representation as
-/// their expanded equivalents.
+/// their expanded equivalents. All mapping keys must be strings: non-string
+/// keys (integers, booleans, null, compound keys — including unquoted YAML 1.1
+/// boolean words such as `y`, `yes`, or `on`) are rejected rather than
+/// silently stringified.
 pub fn parse_yaml_value(yaml: &str, path: &Path) -> Result<Value> {
-    let value: Value = serde_saphyr::from_str(yaml)
+    let value: StrictValue = serde_saphyr::from_str(yaml)
         .map_err(|e| Error::spec(path, yaml_message(&e.to_string())))?;
+    let value = value.0;
     if !value.is_object() {
         return Err(Error::spec(
             path,

@@ -8,6 +8,7 @@ pub mod error;
 pub mod identity;
 pub mod params;
 pub mod spec;
+pub mod strict;
 
 use std::path::Path;
 

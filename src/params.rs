@@ -32,6 +32,27 @@ impl ParamType {
     }
 }
 
+/// Bat Spec v1 integers are restricted to the JCS-safe range ±(2^53 − 1).
+/// Canonical JSON number semantics use IEEE-754 double precision, so two
+/// distinct integers outside this range could canonicalise to the same
+/// number and share a content hash. Out-of-range values are rejected before
+/// canonicalisation — never silently converted, rounded, or stringified.
+pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+pub const MIN_SAFE_INTEGER: i64 = -9_007_199_254_740_991;
+
+fn check_safe_integer(name: &str, value: i64, path: &Path) -> Result<ParamValue> {
+    if (MIN_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value) {
+        Ok(ParamValue::Int(value))
+    } else {
+        Err(Error::spec(
+            path,
+            format!(
+                "parameter `{name}` value {value} exceeds the Bat Spec v1 safe integer range \
+                 ({MIN_SAFE_INTEGER}..={MAX_SAFE_INTEGER})"
+            ),
+        ))
+    }
+}
 /// A resolved parameter value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParamValue {
@@ -186,15 +207,20 @@ fn coerce_override(name: &str, ty: ParamType, raw: &str, path: &Path) -> Result<
             "false" => Ok(ParamValue::Bool(false)),
             other => Err(Error::spec(
                 path,
-                format!("parameter `{name}` has type bool but override value `{other}` is not `true` or `false`"),
+                format!(
+                    "parameter `{name}` has type bool but override value `{other}` is not `true` or `false`"
+                ),
             )),
         },
-        ParamType::Integer => raw.parse::<i64>().map(ParamValue::Int).map_err(|_| {
-            Error::spec(
+        ParamType::Integer => match raw.parse::<i64>() {
+            Ok(n) => check_safe_integer(name, n, path),
+            Err(_) => Err(Error::spec(
                 path,
-                format!("parameter `{name}` has type integer but override value `{raw}` is not an integer"),
-            )
-        }),
+                format!(
+                    "parameter `{name}` has type integer but override value `{raw}` is not an integer"
+                ),
+            )),
+        },
     }
 }
 
@@ -211,10 +237,10 @@ fn coerce_default(name: &str, ty: ParamType, default: &Value, path: &Path) -> Re
     match (ty, default) {
         (ParamType::String, Value::String(s)) => Ok(ParamValue::Str(s.clone())),
         (ParamType::Bool, Value::Bool(b)) => Ok(ParamValue::Bool(*b)),
-        (ParamType::Integer, Value::Number(n)) => n
-            .as_i64()
-            .map(ParamValue::Int)
-            .ok_or_else(|| mismatch("a number outside the integer range or a float")),
+        (ParamType::Integer, Value::Number(n)) => match n.as_i64() {
+            Some(i) => check_safe_integer(name, i, path),
+            None => Err(mismatch("a number outside the integer range or a float")),
+        },
         (_, Value::String(_)) => Err(mismatch("a string")),
         (_, Value::Bool(_)) => Err(mismatch("a bool")),
         (_, Value::Number(_)) => Err(mismatch("a number")),

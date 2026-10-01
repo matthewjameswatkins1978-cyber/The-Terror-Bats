@@ -174,6 +174,8 @@ Parameters are explicit typed values, resolved **before** canonicalisation. They
 
 Declared types: `string`, `bool`, `integer` (no floats).
 
+Integers are restricted to the JCS-safe range `−9007199254740991..=9007199254740991` (±(2⁵³ − 1)). Canonical JSON number semantics use IEEE-754 double precision, so two distinct integers outside this range could canonicalise to the same number and share a content hash. Out-of-range defaults and overrides are rejected before canonicalisation — never silently converted, rounded, or stringified. If Terror Bat later needs arbitrary-size integers, they will use an explicitly versioned string-backed type.
+
 ```yaml
 params:
   helper_fixture:
@@ -328,6 +330,8 @@ Included: `version`, `claim`, `requires`, `forbids`, `environment.relevant`, `at
 Excluded: `id`, `meta`, `params` declarations, source filename, comments, YAML formatting.
 
 Set-like collections (`requires`, `forbids`, `environment.relevant`, `evidence.capture`) are sorted and deduplicated; order is preserved where it can be meaningful (`attack.setup`, `attack.run`, oracle child arrays). No logical-equivalence reasoning is attempted on oracle expressions.
+
+Source-level strictness: Bat Specs are JSON-shaped structured data, so **all YAML mapping keys must be strings** — at the top level and inside opaque adapter payloads, oracle structures, and `meta`. Non-string keys (`1:`, `true:`, `null:`, compound keys) are rejected rather than silently stringified, so `1: value` can never be identical to `"1": value`. Note the parser resolves unquoted scalars with YAML 1.1-style rules: unquoted `y`, `n`, `yes`, `no`, `on`, `off` as keys resolve to booleans and are therefore rejected — quote them (`"on": ...`) to use them as strings.
 
 The projection is serialised to **RFC 8785 canonical JSON** (inspectable via `terrorbat spec canonical`) and hashed with **SHA-256**, producing identities of the form `<kind>:sha256:<lowercase hex>`:
 
