@@ -364,3 +364,42 @@ fn builtin_orphan_process_bat_times_out_and_cleans_up() {
     let status = String::from_utf8(s.get(status_ref).expect("bytes")).expect("utf8");
     assert!(status.contains("heartbeats"), "status evidence: {status}");
 }
+
+/// Closeout invariant: a tampered receipt cannot be inspected or replayed
+/// as trusted evidence. Proven through the real product paths (run →
+/// receipt on disk → tamper → lookup/load/replay), not a private helper:
+/// the product boundary itself must fail closed with TB-RECEIPT-CORRUPT.
+#[test]
+fn tampered_receipt_cannot_be_inspected_or_replayed() {
+    let dir = TempDir::new("sa-receipt-tamper");
+    let repo = dir.join("repo");
+    make_repo(&repo);
+    let store = dir.join("store");
+    let out = run_bat(&opts(&shipped_bat("unexpected-change.yaml"), &repo, &store)).expect("run");
+    assert_eq!(out.receipt.verdict, Verdict::Proven);
+    let rid = out.receipt.receipt_id.clone();
+
+    // Downgrade the verdict on disk.
+    let path = out.run_dir.join("receipt.json");
+    let text = std::fs::read_to_string(&path).expect("read receipt");
+    std::fs::write(
+        &path,
+        text.replacen(
+            "\"verdict\": \"PROVEN\"",
+            "\"verdict\": \"NOT OBSERVED\"",
+            1,
+        ),
+    )
+    .expect("write tampered receipt");
+
+    // Every trusted path fails closed.
+    let s = EvidenceStore::open(&store).expect("store");
+    let loc =
+        terrorbat::receipt::locate_run(&s, &rid).expect_err("inspect lookup must fail closed");
+    assert!(loc.to_string().contains("TB-RECEIPT-CORRUPT"), "{loc}");
+    let load = terrorbat::receipt::load_receipt(&out.run_dir).expect_err("load must fail closed");
+    assert!(load.to_string().contains("TB-RECEIPT-CORRUPT"), "{load}");
+    let rep =
+        terrorbat::receipt::replay(&rid, Some(store.clone())).expect_err("replay must fail closed");
+    assert!(rep.to_string().contains("TB-RECEIPT-CORRUPT"), "{rep}");
+}

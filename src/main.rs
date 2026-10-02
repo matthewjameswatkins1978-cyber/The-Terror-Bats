@@ -191,12 +191,14 @@ fn run() -> Result<u8, String> {
         }
         Command::Inspect { id, store, json } => {
             let store = open_store(store)?;
-            let run_dir = terrorbat::receipt::locate_run(&store, &id).ok_or_else(|| {
-                format!(
-                    "no run or receipt with id `{id}` in store `{}`",
-                    store.root().display()
-                )
-            })?;
+            let run_dir = terrorbat::receipt::locate_run(&store, &id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "no run or receipt with id `{id}` in store `{}`",
+                        store.root().display()
+                    )
+                })?;
             let receipt = terrorbat::receipt::load_receipt(&run_dir).map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())?;

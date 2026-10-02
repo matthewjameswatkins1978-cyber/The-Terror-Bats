@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error("evidence store error at `{path}`: {message}")]
     Store { path: PathBuf, message: String },
+
+    #[error("receipt integrity failure at `{path}`:\n{message}")]
+    Receipt { path: PathBuf, message: String },
 }
 
 impl Error {
@@ -35,6 +38,13 @@ impl Error {
 
     pub fn store(path: &Path, message: impl Into<String>) -> Self {
         Error::Store {
+            path: path.to_path_buf(),
+            message: message.into(),
+        }
+    }
+
+    pub fn receipt(path: &Path, message: impl Into<String>) -> Self {
+        Error::Receipt {
             path: path.to_path_buf(),
             message: message.into(),
         }

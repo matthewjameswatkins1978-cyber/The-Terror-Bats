@@ -333,29 +333,117 @@ pub fn write_receipt(run_dir: &Path, receipt: &Receipt) -> Result<()> {
         .map_err(|e| Error::store(&path, format!("cannot write receipt: {e}")))
 }
 
+/// Read and deserialize a receipt WITHOUT verifying it.
+///
+/// Private by design: trusted product paths must use [`load_receipt`],
+/// which fails closed. This helper exists only so lookup can match a
+/// claimed id and then verify it — corruption is surfaced, never hidden.
+fn parse_receipt_unverified(path: &Path) -> Result<Receipt> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Error::store(path, format!("cannot read receipt: {e}")))?;
+    serde_json::from_str(text.as_str())
+        .map_err(|e| Error::store(path, format!("cannot parse receipt: {e}")))
+}
+
+/// Canonical receipt-id shape: `receipt:sha256:<64 lowercase hex chars>`.
+/// No other algorithm is accepted under the v0 receipt schema; future
+/// identity versions require an explicit protocol/version decision.
+pub fn validate_receipt_id(id: &str) -> std::result::Result<(), String> {
+    let Some(hex) = id.strip_prefix("receipt:sha256:") else {
+        return Err(format!(
+            "malformed receipt id `{id}`: expected `receipt:sha256:<64 lowercase hex chars>`"
+        ));
+    };
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(format!(
+            "malformed receipt id `{id}`: digest must be exactly 64 lowercase hex characters"
+        ));
+    }
+    Ok(())
+}
+
+/// Verify a receipt's integrity, reusing the one existing identity
+/// definition ([`compute_id`]): id format, recomputed canonical identity,
+/// and the derived replay command. Fails closed; never repairs, never
+/// overwrites, never continues with a warning.
+fn verify_receipt(receipt: &Receipt, path: &Path) -> Result<()> {
+    validate_receipt_id(&receipt.receipt_id)
+        .map_err(|m| Error::receipt(path, format!("{m}\n\nCode: TB-RECEIPT-CORRUPT")))?;
+    let computed = compute_id(receipt)?;
+    if computed != receipt.receipt_id {
+        return Err(Error::receipt(
+            path,
+            format!(
+                "CORRUPT receipt: stored receipt id does not match canonical receipt \
+                 contents.\n\nstored:\n  {}\n\ncomputed:\n  {}\n\nRefusing to inspect or \
+                 replay this receipt.\n\nCode: TB-RECEIPT-CORRUPT",
+                receipt.receipt_id, computed
+            ),
+        ));
+    }
+    // `replay_command` is deliberately excluded from the content hash, so it
+    // cannot be trusted from the file: a tampered replay command must not
+    // become a trusted executable instruction. It must equal its derivation.
+    let expected = format!("terrorbat replay {}", receipt.receipt_id);
+    if receipt.reproduction.replay_command != expected {
+        return Err(Error::receipt(
+            path,
+            format!(
+                "CORRUPT receipt: stored replay command does not match its derivation \
+                 rule.\n\nstored:\n  {}\n\nexpected:\n  {}\n\nRefusing to inspect or replay \
+                 this receipt.\n\nCode: TB-RECEIPT-CORRUPT",
+                receipt.reproduction.replay_command, expected
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Authoritative receipt load: read → deserialize → validate id format →
+/// recompute canonical identity → compare → trust only if equal.
+/// Evidence objects verify their digest on read; receipts do the same.
 pub fn load_receipt(run_dir: &Path) -> Result<Receipt> {
     let path = run_dir.join("receipt.json");
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| Error::store(&path, format!("cannot read receipt: {e}")))?;
-    serde_json::from_str(&text)
-        .map_err(|e| Error::store(&path, format!("cannot parse receipt: {e}")))
+    let receipt = parse_receipt_unverified(&path)?;
+    verify_receipt(&receipt, &path)?;
+    Ok(receipt)
 }
 
 /// Find a run directory by execution id or receipt id.
-pub fn locate_run(store: &EvidenceStore, id: &str) -> Option<PathBuf> {
+///
+/// Receipt-id lookup is integrity-safe: a corrupt receipt claiming the
+/// requested id surfaces as a TB-RECEIPT-CORRUPT error instead of
+/// masquerading as "not found"; a genuine verified receipt is preferred
+/// over any unverified claimant; a corrupt receipt can never redirect a
+/// lookup or poison a replay.
+pub fn locate_run(store: &EvidenceStore, id: &str) -> Result<Option<PathBuf>> {
     let direct = store.run_dir(id);
     if direct.join("manifest.json").exists() {
-        return Some(direct);
+        return Ok(Some(direct));
     }
+    let mut corruption: Option<Error> = None;
     for run in store.list_runs() {
         let dir = store.run_dir(&run);
-        if let Ok(receipt) = load_receipt(&dir)
-            && receipt.receipt_id == id
-        {
-            return Some(dir);
+        let path = dir.join("receipt.json");
+        let Ok(candidate) = parse_receipt_unverified(&path) else {
+            continue;
+        };
+        if candidate.receipt_id != id {
+            continue;
+        }
+        match verify_receipt(&candidate, &path) {
+            Ok(()) => return Ok(Some(dir)),
+            Err(e) => corruption = Some(e),
         }
     }
-    None
+    match corruption {
+        Some(e) => Err(e),
+        None => Ok(None),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +612,7 @@ pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, Ru
         None => EvidenceStore::default_root()?,
     };
     let store = EvidenceStore::open(&store_root)?;
-    let run_dir = locate_run(&store, id).ok_or_else(|| {
+    let run_dir = locate_run(&store, id)?.ok_or_else(|| {
         Error::store(
             &store_root,
             format!(
@@ -533,6 +621,7 @@ pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, Ru
             ),
         )
     })?;
+    // Verified load: a tampered receipt can never seed a replay.
     let original = load_receipt(&run_dir)?;
 
     // Recover the Bat source: prefer the original file when it still exists

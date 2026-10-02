@@ -1,6 +1,6 @@
 # Reusery Bat Zero Report — Windows First Flight
 
-**Date:** 2026-01-10 (local) · **Terror Bat:** 0.1.0 First Flight candidate · **Platform:** Windows x86-64
+**Date:** 2026-10-01 · **Terror Bat:** 0.1.0 First Flight candidate · **Platform:** Windows x86-64
 
 Bat Zero is the product test: a real experiment, run through the real
 pipeline, judged against the seven M0 questions and the kill gate. The prior

@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec, yaml_path};
 use terrorbat::evidence::EvidenceStore;
@@ -513,11 +513,279 @@ fn inspect_locates_runs_by_execution_and_receipt_id() {
     let bat = write_spec(&specs, "falsify.yaml", &falsifying_bat());
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     let ev = EvidenceStore::open(&store).expect("store");
-    let by_exec = receipt::locate_run(&ev, &out.execution_id).expect("by execution id");
-    let by_receipt = receipt::locate_run(&ev, &out.receipt.receipt_id).expect("by receipt id");
+    let by_exec = receipt::locate_run(&ev, &out.execution_id)
+        .expect("lookup")
+        .expect("by execution id");
+    let by_receipt = receipt::locate_run(&ev, &out.receipt.receipt_id)
+        .expect("lookup")
+        .expect("by receipt id");
     assert_eq!(by_exec, by_receipt);
-    assert!(receipt::locate_run(&ev, "receipt:sha256:deadbeef").is_none());
+    assert!(
+        receipt::locate_run(&ev, "receipt:sha256:deadbeef")
+            .expect("scan")
+            .is_none()
+    );
     let r = receipt::load_receipt(&by_exec).expect("receipt");
     let rendered = receipt::render(&r);
     assert!(rendered.contains(&out.receipt.receipt_id));
+}
+
+// ---------------------------------------------------------------------------
+// Receipt integrity (closeout): content-addressed receipts verify on read
+// exactly like evidence objects — fail closed, never repair, never warn and
+// continue. A receipt may not be used by inspect, replay, lookup or
+// comparison unless its content still matches its claimed identity.
+// ---------------------------------------------------------------------------
+
+fn tamper_receipt(run_dir: &Path, from: &str, to: &str) {
+    let path = run_dir.join("receipt.json");
+    let text = std::fs::read_to_string(&path).expect("read receipt");
+    assert!(
+        text.contains(from),
+        "tamper target missing from receipt: {from}"
+    );
+    std::fs::write(&path, text.replacen(from, to, 1)).expect("write tampered receipt");
+}
+
+fn forged_id(c: char) -> String {
+    format!("receipt:sha256:{}", c.to_string().repeat(64))
+}
+
+fn fresh_proven_run(tag: &str) -> (TempDir, PathBuf, PathBuf, terrorbat::runner::RunOutput) {
+    let dir = TempDir::new(tag);
+    let repo = dir.join("repo");
+    make_repo(&repo);
+    let store = dir.join("store");
+    let specs = dir.join("specs");
+    let bat = write_spec(&specs, "falsify.yaml", &falsifying_bat());
+    let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
+    assert_eq!(out.receipt.verdict, Verdict::Proven);
+    (dir, repo, store, out)
+}
+
+/// Run a legitimate receipt through the real framework path, tamper one
+/// field on disk, and require every trusted path to fail closed.
+fn integrity_case(
+    label: &str,
+    tamper: impl FnOnce(&terrorbat::receipt::Receipt) -> (String, String),
+) {
+    let (_dir, _repo, store, out) = fresh_proven_run("rc-integrity");
+    let rid = out.receipt.receipt_id.clone();
+    let (from, to) = tamper(&out.receipt);
+    tamper_receipt(&out.run_dir, &from, &to);
+
+    let load = match receipt::load_receipt(&out.run_dir) {
+        Ok(_) => panic!("{label}: tampered receipt must not load"),
+        Err(e) => e.to_string(),
+    };
+    assert!(load.contains("TB-RECEIPT-CORRUPT"), "{label}: {load}");
+
+    let ev = EvidenceStore::open(&store).expect("store");
+    let loc = match receipt::locate_run(&ev, &rid) {
+        Ok(_) => panic!("{label}: lookup by claimed id must fail closed"),
+        Err(e) => e.to_string(),
+    };
+    assert!(loc.contains("TB-RECEIPT-CORRUPT"), "{label}: {loc}");
+
+    let rep = match receipt::replay(&rid, Some(store.clone())) {
+        Ok(_) => panic!("{label}: replay must fail closed"),
+        Err(e) => e.to_string(),
+    };
+    assert!(rep.contains("TB-RECEIPT-CORRUPT"), "{label}: {rep}");
+}
+
+#[test]
+fn any_receipt_content_mutation_is_refused() {
+    type TamperFn = Box<dyn Fn(&terrorbat::receipt::Receipt) -> (String, String)>;
+    let cases: Vec<(&str, TamperFn)> = vec![
+        (
+            "A verdict",
+            Box::new(|r| {
+                (
+                    format!("\"verdict\": \"{}\"", r.verdict.as_str()),
+                    "\"verdict\": \"NOT OBSERVED\"".to_string(),
+                )
+            }),
+        ),
+        (
+            "B oracle result",
+            Box::new(|r| {
+                (
+                    format!(
+                        "\"result\": \"{:?}\"",
+                        r.oracle.result.expect("oracle result")
+                    ),
+                    "\"result\": \"NotFalsified\"".to_string(),
+                )
+            }),
+        ),
+        (
+            "C target commit",
+            Box::new(|r| {
+                (
+                    format!("\"commit\": \"{}\"", r.target.commit),
+                    format!("\"commit\": \"{}\"", "a".repeat(40)),
+                )
+            }),
+        ),
+        (
+            "D evidence reference",
+            Box::new(|r| {
+                let first = r.evidence[0].reference.0.clone();
+                let last = first.chars().last().expect("nonempty");
+                let flipped = if last == '0' { '1' } else { '0' };
+                let mut forged = first.clone();
+                forged.pop();
+                forged.push(flipped);
+                (
+                    format!("\"reference\": \"{first}\""),
+                    format!("\"reference\": \"{forged}\""),
+                )
+            }),
+        ),
+        (
+            "E claim text",
+            Box::new(|_| {
+                (
+                    "never modified by ordinary work".to_string(),
+                    "sometimes modified by ordinary work".to_string(),
+                )
+            }),
+        ),
+        (
+            "F isolation statement",
+            Box::new(|_| {
+                (
+                    "host filesystem containment: UNENFORCED".to_string(),
+                    "host filesystem containment: ENFORCED".to_string(),
+                )
+            }),
+        ),
+        (
+            "H replay command",
+            Box::new(|r| {
+                (
+                    format!("\"replay_command\": \"{}\"", r.reproduction.replay_command),
+                    format!("\"replay_command\": \"{}\"", forged_id('c')),
+                )
+            }),
+        ),
+    ];
+    for (label, make) in cases {
+        integrity_case(label, |r| make(r));
+    }
+}
+
+#[test]
+fn forged_receipt_id_is_refused_and_cannot_redirect() {
+    let (_dir, _repo, store, out) = fresh_proven_run("rc-forged-id");
+    let rid = out.receipt.receipt_id.clone();
+    let forged = forged_id('b');
+    tamper_receipt(
+        &out.run_dir,
+        &format!("\"receipt_id\": \"{rid}\""),
+        &format!("\"receipt_id\": \"{forged}\""),
+    );
+
+    // Case G: load by run dir fails closed (stored id != recomputed id).
+    let load = receipt::load_receipt(&out.run_dir).expect_err("must refuse");
+    assert!(load.to_string().contains("TB-RECEIPT-CORRUPT"), "{load}");
+
+    let ev = EvidenceStore::open(&store).expect("store");
+    // Lookup by the forged id finds the claimant, but verification
+    // recomputes the true id: corruption, never trust.
+    let loc = receipt::locate_run(&ev, &forged).expect_err("forged lookup must fail closed");
+    assert!(loc.to_string().contains("TB-RECEIPT-CORRUPT"), "{loc}");
+    // Lookup by the true id finds no claimant: honest not-found, never the
+    // impostor.
+    assert!(receipt::locate_run(&ev, &rid).expect("scan").is_none());
+    // Replay by the forged id fails closed.
+    let rep = receipt::replay(&forged, Some(store)).expect_err("replay must refuse");
+    assert!(rep.to_string().contains("TB-RECEIPT-CORRUPT"), "{rep}");
+}
+
+#[test]
+fn corrupt_copy_cannot_impersonate_a_genuine_receipt() {
+    let (_dir, _repo, store, out) = fresh_proven_run("rc-impersonate");
+    let rid = out.receipt.receipt_id.clone();
+
+    // Impostor: a copy of the run under another execution id, content
+    // tampered but still claiming the genuine receipt id.
+    let impostor = store.join("runs").join("impostor-exec-id");
+    copy_dir(&out.run_dir, &impostor);
+    tamper_receipt(
+        &impostor,
+        "never modified by ordinary work",
+        "sometimes modified by ordinary work",
+    );
+
+    let ev = EvidenceStore::open(&store).expect("store");
+    // (a) Genuine present: the verified receipt wins over any unverified
+    // claimant, whatever the scan order.
+    let found = receipt::locate_run(&ev, &rid)
+        .expect("lookup")
+        .expect("found");
+    assert_eq!(
+        found, out.run_dir,
+        "genuine receipt must be found, not the impostor"
+    );
+
+    // (b) Genuine removed: corruption surfaces — never the impostor, never
+    // a silent not-found.
+    std::fs::remove_dir_all(&out.run_dir).expect("remove genuine");
+    let err = receipt::locate_run(&ev, &rid).expect_err("corruption must surface");
+    assert!(err.to_string().contains("TB-RECEIPT-CORRUPT"), "{err}");
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("create impostor dir");
+    for entry in std::fs::read_dir(from).expect("read run dir") {
+        let entry = entry.expect("entry");
+        std::fs::copy(entry.path(), to.join(entry.file_name())).expect("copy file");
+    }
+}
+
+#[test]
+fn malformed_receipt_ids_are_rejected() {
+    for bad in [
+        "receipt:sha256:",
+        "receipt:sha256:xyz",
+        "abc123",
+        &format!("evidence:sha256:{}", "a".repeat(64)),
+        &format!("receipt:sha256:{}", "A".repeat(64)),
+        &format!("receipt:sha256:{}", "a".repeat(63)),
+        &format!("receipt:sha256:{}", "g".repeat(64)),
+    ] {
+        assert!(
+            receipt::validate_receipt_id(bad).is_err(),
+            "`{bad}` must be rejected"
+        );
+    }
+    receipt::validate_receipt_id(&format!("receipt:sha256:{}", "0".repeat(64)))
+        .expect("canonical shape is accepted");
+
+    // On disk: a malformed stored id fails the verified load closed.
+    let (_dir, _repo, store, out) = fresh_proven_run("rc-malformed");
+    let rid = out.receipt.receipt_id.clone();
+    tamper_receipt(
+        &out.run_dir,
+        &format!("\"receipt_id\": \"{rid}\""),
+        "\"receipt_id\": \"receipt:sha256:xyz\"",
+    );
+    let load = receipt::load_receipt(&out.run_dir).expect_err("must refuse");
+    assert!(load.to_string().contains("TB-RECEIPT-CORRUPT"), "{load}");
+    let ev = EvidenceStore::open(&store).expect("store");
+    let loc = receipt::locate_run(&ev, "receipt:sha256:xyz").expect_err("scan must fail closed");
+    assert!(loc.to_string().contains("TB-RECEIPT-CORRUPT"), "{loc}");
+}
+
+#[test]
+fn legitimate_receipts_still_verify() {
+    // The hashing contract is unchanged: a receipt produced by the real
+    // pipeline verifies immediately, with no id regeneration.
+    let (_dir, _repo, _store, out) = fresh_proven_run("rc-legit");
+    let r = receipt::load_receipt(&out.run_dir).expect("legitimate receipt verifies");
+    assert_eq!(r.receipt_id, out.receipt.receipt_id);
+    let again = receipt::compute_id(&r).expect("recompute");
+    assert_eq!(again, r.receipt_id);
 }
