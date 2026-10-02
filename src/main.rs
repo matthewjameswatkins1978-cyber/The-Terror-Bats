@@ -26,6 +26,11 @@ enum Command {
         #[command(subcommand)]
         command: SpecCommand,
     },
+    /// Bat Pack operations (validate manifests, identify packs).
+    Pack {
+        #[command(subcommand)]
+        command: PackCommand,
+    },
     /// Execute a Bat against a target repository in a disposable worktree.
     Run {
         /// Path to the Bat Spec YAML.
@@ -76,6 +81,34 @@ enum Command {
         #[arg(long)]
         store: Option<PathBuf>,
         /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PackCommand {
+    /// Validate a Bat Pack file and all of its effective Bats.
+    Check {
+        /// Path to the Bat Pack YAML.
+        pack: PathBuf,
+        /// Evidence store root (accepted for surface consistency; pack
+        /// validation performs no store reads or writes).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output (plain schema, never presentation).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the content identity of a Bat Pack and its entries.
+    Id {
+        /// Path to the Bat Pack YAML.
+        pack: PathBuf,
+        /// Evidence store root (accepted for surface consistency; pack
+        /// identification performs no store reads or writes).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output (plain schema, never presentation).
         #[arg(long)]
         json: bool,
     },
@@ -161,6 +194,41 @@ fn run() -> Result<u8, String> {
                 let identified =
                     terrorbat::identify_spec_file(&file, &overrides).map_err(|e| e.to_string())?;
                 println!("{}", identified.canonical_json);
+                Ok(0)
+            }
+        },
+        Command::Pack { command } => match command {
+            PackCommand::Check { pack, store, json } => {
+                if let Some(root) = store {
+                    open_store(Some(root))?;
+                }
+                let identified =
+                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                if json {
+                    let text = serde_json::to_string_pretty(&identified.to_json())
+                        .map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    println!("OK  {}", identified.human_id);
+                }
+                Ok(0)
+            }
+            PackCommand::Id { pack, store, json } => {
+                if let Some(root) = store {
+                    open_store(Some(root))?;
+                }
+                let identified =
+                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                if json {
+                    let text = serde_json::to_string_pretty(&identified.to_json())
+                        .map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    println!("pack  {}", identified.identity);
+                    for entry in &identified.entries {
+                        println!("bat   {}  {}", entry.bat, entry.path);
+                    }
+                }
                 Ok(0)
             }
         },
