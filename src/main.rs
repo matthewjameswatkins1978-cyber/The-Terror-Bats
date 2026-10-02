@@ -182,7 +182,11 @@ fn run() -> Result<u8, String> {
                 let text = serde_json::to_string_pretty(&out.receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                println!("{}", terrorbat::receipt::render(&out.receipt));
+                let caps = terrorbat::presentation::detect_capabilities();
+                println!(
+                    "{}",
+                    terrorbat::presentation::render_receipt(&out.receipt, &caps)
+                );
             }
             Ok(terrorbat::runner::exit_code_for(
                 out.manifest.run_status,
@@ -204,7 +208,11 @@ fn run() -> Result<u8, String> {
                 let text = serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                println!("{}", terrorbat::receipt::render(&receipt));
+                let caps = terrorbat::presentation::detect_capabilities();
+                println!(
+                    "{}",
+                    terrorbat::presentation::render_receipt(&receipt, &caps)
+                );
             }
             Ok(0)
         }
@@ -242,8 +250,11 @@ fn run() -> Result<u8, String> {
                 let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                println!("{}", terrorbat::receipt::render_replay(&report));
-                println!("{}", terrorbat::receipt::render(&out.receipt));
+                let caps = terrorbat::presentation::detect_capabilities();
+                println!(
+                    "{}",
+                    terrorbat::presentation::render_replay(&report, &out.receipt, &caps)
+                );
             }
             Ok(terrorbat::runner::exit_code_for(
                 out.manifest.run_status,
@@ -256,7 +267,8 @@ fn run() -> Result<u8, String> {
                 let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                println!("{}", terrorbat::doctor::render(&report));
+                let caps = terrorbat::presentation::detect_capabilities();
+                println!("{}", terrorbat::presentation::render_doctor(&report, &caps));
             }
             Ok(if report.overall_ready { 0 } else { 3 })
         }
@@ -271,5 +283,6 @@ fn open_store(store: Option<PathBuf>) -> Result<terrorbat::evidence::EvidenceSto
     terrorbat::evidence::EvidenceStore::open(&root).map_err(|e| e.to_string())
 }
 
-// Human rendering lives in terrorbat::receipt::render — one data model, one
-// truth source; the CLI does not maintain a second renderer.
+// Human rendering lives in terrorbat::presentation: one receipt model
+// projected to a Sartorial Document. The CLI owns no renderers, and the
+// machine (--json) path never touches presentation.

@@ -65,6 +65,12 @@ fn non_falsifying_bat() -> String {
         .to_string()
 }
 
+/// Single human presentation path for receipt honesty assertions: the
+/// Sartorial projection under deterministic pipe capabilities.
+fn present(r: &terrorbat::receipt::Receipt) -> String {
+    terrorbat::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
+}
+
 #[test]
 fn falsification_flow_produces_proven_receipt() {
     let dir = TempDir::new("rc-proven");
@@ -110,8 +116,8 @@ fn falsification_flow_produces_proven_receipt() {
     assert!(r.reproduction.replay_command.contains("terrorbat replay"));
 
     // Human rendering: honest about PROVEN's scope and isolation.
-    let rendered = receipt::render(r);
-    assert!(rendered.contains("🦇 protected-config"));
+    let rendered = present(r);
+    assert!(rendered.contains("\\^v^/"));
     assert!(rendered.contains("PROVEN"));
     assert!(rendered.contains("not a universal proof"), "{rendered}");
     assert!(rendered.contains("UNENFORCED"));
@@ -141,7 +147,7 @@ fn not_observed_is_never_correctness() {
         0
     );
 
-    let rendered = receipt::render(r);
+    let rendered = present(r);
     assert!(rendered.contains("NOT OBSERVED"));
     assert!(
         rendered.contains("NOT a correctness certificate"),
@@ -186,7 +192,7 @@ fn timeout_is_inconclusive_never_falsification() {
         exit_code_for(out.manifest.run_status, Some(r.verdict.as_str())),
         3
     );
-    let rendered = receipt::render(r);
+    let rendered = present(r);
     assert!(rendered.contains("INCONCLUSIVE"));
     assert!(rendered.contains("timeout describes the run"), "{rendered}");
     assert!(!rendered.contains("FALSIFIED"));
@@ -215,7 +221,7 @@ fn infrastructure_failure_is_never_proven() {
     assert_eq!(r.execution.status, RunStatus::InfrastructureError);
     assert_eq!(r.verdict, Verdict::InfrastructureError);
     assert_ne!(r.verdict, Verdict::Proven);
-    let rendered = receipt::render(r);
+    let rendered = present(r);
     assert!(rendered.contains("INFRASTRUCTURE ERROR"));
     assert!(
         r.verdict_meaning
@@ -280,7 +286,7 @@ fn policy_denial_is_recorded_as_policy_not_claim_failure() {
         exit_code_for(out.manifest.run_status, Some(out.receipt.verdict.as_str())),
         2
     );
-    let rendered = receipt::render(&out.receipt);
+    let rendered = present(&out.receipt);
     assert!(rendered.contains("PolicyDenied"), "{rendered}");
 }
 
@@ -526,7 +532,7 @@ fn inspect_locates_runs_by_execution_and_receipt_id() {
             .is_none()
     );
     let r = receipt::load_receipt(&by_exec).expect("receipt");
-    let rendered = receipt::render(&r);
+    let rendered = present(&r);
     assert!(rendered.contains(&out.receipt.receipt_id));
 }
 

@@ -494,6 +494,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
+name = "sartorial-core"
+version = "0.3.0"
+source = "git+https://github.com/matthewjameswatkins1978-cyber/Sartorial?rev=2bb70656a76ca5bec0976c66c7a1f032b0a59826#2bb70656a76ca5bec0976c66c7a1f032b0a59826"
+dependencies = [
+ "anstyle",
+ "serde",
+ "unicode-width",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,11 +630,13 @@ dependencies = [
 name = "terrorbat"
 version = "0.1.0"
 dependencies = [
+ "anstyle",
  "clap",
  "command-group",
  "dirs",
  "libc",
  "regex",
+ "sartorial-core",
  "serde",
  "serde-saphyr",
  "serde_json",

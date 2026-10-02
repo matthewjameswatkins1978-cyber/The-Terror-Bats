@@ -7,10 +7,12 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats"
 
 [dependencies]
+anstyle = "1.0"
 clap = { version = "4.6", features = ["derive"] }
 command-group = "5.0"
 dirs = "7"
 regex = "1"
+sartorial-core = { git = "https://github.com/matthewjameswatkins1978-cyber/Sartorial", rev = "2bb70656a76ca5bec0976c66c7a1f032b0a59826" }
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1.3"
 serde_json = "1"

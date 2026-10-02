@@ -51,6 +51,11 @@ fn shipped_bat(name: &str) -> PathBuf {
 
 /// Invariant 1: a normal (even mutating) Bat run never touches the source
 /// working tree — all mutation happens in the disposable worktree.
+/// Single human presentation path for honesty assertions.
+fn present(r: &terrorbat::receipt::Receipt) -> String {
+    terrorbat::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
+}
+
 #[test]
 fn source_repo_unchanged_by_normal_run() {
     let dir = TempDir::new("sa-source");
@@ -253,7 +258,7 @@ fn not_observed_never_printed_as_correctness() {
     let store = dir.join("store");
     let out = run_bat(&opts(&shipped_bat("command-exit.yaml"), &repo, &store)).expect("run");
     assert_eq!(out.receipt.verdict, Verdict::NotObserved);
-    let rendered = terrorbat::receipt::render(&out.receipt);
+    let rendered = present(&out.receipt);
     assert!(rendered.contains("NOT OBSERVED"));
     assert!(rendered.contains("NOT a correctness certificate"));
     for forbidden in ["is correct", "verified safe", "ALL GREEN", "PASSED"] {
@@ -272,7 +277,7 @@ fn worktree_isolation_never_labelled_sandbox() {
     make_repo(&repo);
     let store = dir.join("store");
     let out = run_bat(&opts(&shipped_bat("unexpected-change.yaml"), &repo, &store)).expect("run");
-    let rendered = terrorbat::receipt::render(&out.receipt);
+    let rendered = present(&out.receipt);
     assert!(rendered.contains("NOT hostile-code containment"));
     assert!(rendered.contains("UNENFORCED"));
     assert!(!rendered.to_lowercase().contains("sandboxed"));

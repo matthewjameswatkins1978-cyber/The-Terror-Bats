@@ -26,8 +26,8 @@ use crate::error::{Error, Result};
 use crate::evidence::{EvidenceRef, EvidenceStore, sha256_hex};
 use crate::oracle::{ConditionOutcome, OracleResult};
 use crate::runner::{
-    BatBlock, CapabilitiesRecord, Captures, CleanupRecord, CleanupStatus, EnvironmentRecord,
-    RunManifest, RunOptions, RunOutput, RunStatus, StepRecord, TargetRecord, run_bat,
+    BatBlock, CapabilitiesRecord, Captures, CleanupRecord, EnvironmentRecord, RunManifest,
+    RunOptions, RunOutput, RunStatus, StepRecord, TargetRecord, run_bat,
 };
 
 pub const RECEIPT_VERSION: &str = "terrorbat/receipt/v0";
@@ -447,145 +447,6 @@ pub fn locate_run(store: &EvidenceStore, id: &str) -> Result<Option<PathBuf>> {
 }
 
 // ---------------------------------------------------------------------------
-// Human rendering (generated from the same receipt data model)
-// ---------------------------------------------------------------------------
-
-pub fn render(r: &Receipt) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("🦇 {}\n\n", r.bat.id));
-
-    out.push_str("Claim\n");
-    for line in r.claim_text.trim().lines() {
-        out.push_str(&format!("  {line}\n"));
-    }
-    out.push('\n');
-
-    out.push_str("Target\n");
-    out.push_str(&format!("  {}\n", r.target.root));
-    out.push_str(&format!("  {}\n\n", short(&r.target.commit)));
-
-    out.push_str("Attack\n");
-    for phase in ["setup", "run"] {
-        let total = r
-            .execution
-            .steps
-            .iter()
-            .filter(|s| s.phase == phase)
-            .count();
-        let done = r
-            .execution
-            .steps
-            .iter()
-            .filter(|s| s.phase == phase && s.status == RunStatus::Completed)
-            .count();
-        out.push_str(&format!("  {phase:<6} {done}/{total} completed\n"));
-    }
-    out.push('\n');
-
-    out.push_str("Execution\n");
-    out.push_str(&format!("  {:?}\n\n", r.execution.status));
-
-    out.push_str("Oracle\n");
-    match r.oracle.result {
-        Some(result) => {
-            out.push_str(&format!("  {}\n", result.label()));
-            for c in &r.oracle.conditions {
-                let note = c
-                    .note
-                    .as_ref()
-                    .map(|n| format!(" — {n}"))
-                    .unwrap_or_default();
-                out.push_str(&format!("  · {} → {:?}{note}\n", c.condition, c.result));
-            }
-        }
-        None => {
-            let note = r
-                .oracle
-                .note
-                .as_deref()
-                .unwrap_or("run did not complete; oracle not evaluated");
-            out.push_str(&format!("  NOT EVALUATED ({note})\n"));
-        }
-    }
-    out.push('\n');
-
-    out.push_str("Verdict\n");
-    out.push_str(&format!("  {}\n", r.verdict.as_str()));
-    out.push_str(&format!("  {}\n\n", r.verdict_meaning));
-
-    out.push_str("Evidence\n");
-    let mut shown = 0;
-    for item in &r.evidence {
-        if matches!(
-            item.kind.as_str(),
-            "git_diff" | "git_status" | "base_snapshot"
-        ) {
-            let trunc = if item.truncated { " (truncated)" } else { "" };
-            out.push_str(&format!("  {:<13} {}{trunc}\n", item.kind, item.reference));
-            shown += 1;
-        }
-    }
-    let streams = r.evidence.len() - shown;
-    if streams > 0 {
-        out.push_str(&format!(
-            "  {streams} step stream object(s) in receipt.json\n"
-        ));
-    }
-    out.push('\n');
-
-    out.push_str("Isolation\n");
-    out.push_str(&format!(
-        "  disposable Git worktree ({})\n",
-        r.isolation.mode
-    ));
-    for g in &r.isolation.guarantees {
-        out.push_str(&format!("  ✓ {g}\n"));
-    }
-    for n in &r.isolation.non_guarantees {
-        out.push_str(&format!("  ✗ {n}\n"));
-    }
-    out.push('\n');
-
-    out.push_str("Cleanup\n");
-    match r.cleanup.status {
-        CleanupStatus::Succeeded => out.push_str("  succeeded\n"),
-        CleanupStatus::NotAttempted => out.push_str("  not attempted\n"),
-        CleanupStatus::Failed => {
-            out.push_str("  FAILED\n");
-            if let Some(err) = &r.cleanup.error {
-                for line in err.lines() {
-                    out.push_str(&format!("  {line}\n"));
-                }
-            }
-        }
-    }
-    out.push('\n');
-
-    if !r.limitations.is_empty() {
-        out.push_str("Limitations\n");
-        for l in &r.limitations {
-            out.push_str(&format!("  - {l}\n"));
-        }
-        out.push('\n');
-    }
-
-    out.push_str("Reproduce\n");
-    out.push_str(&format!("  {}\n\n", r.reproduction.replay_command));
-
-    out.push_str(&format!("Execution  {}\n", r.execution_id));
-    out.push_str(&format!("Receipt    {}\n", r.receipt_id));
-    out
-}
-
-fn short(sha: &str) -> String {
-    if sha.len() > 12 {
-        sha[..12].to_string()
-    } else {
-        sha.to_string()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Replay (M6): same-machine, local-repository oriented.
 // ---------------------------------------------------------------------------
 
@@ -685,7 +546,7 @@ pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, Ru
             format!(
                 "replay cannot proceed: commit `{}` no longer exists in `{}`. \
                  Replay never fetches from the network; restore the commit locally first.",
-                short(&original.target.commit),
+                original.target.commit.chars().take(12).collect::<String>(),
                 repo.display()
             ),
         ));
@@ -769,72 +630,6 @@ fn compare(original: &Receipt, new: &Receipt, notes: Vec<String>) -> ReplayRepor
         environment_changes,
         notes,
     }
-}
-
-pub fn render_replay(report: &ReplayReport) -> String {
-    let mut out = String::new();
-    out.push_str("REPLAY\n");
-    out.push_str(&format!(
-        "  original execution  {}\n",
-        report.original_execution_id
-    ));
-    out.push_str(&format!(
-        "  new execution       {}\n",
-        report.new_execution_id
-    ));
-    out.push_str(&format!(
-        "  original receipt    {}\n",
-        report.original_receipt_id
-    ));
-    out.push_str(&format!(
-        "  new receipt         {}\n\n",
-        report.new_receipt_id
-    ));
-    out.push_str(&format!(
-        "  execution status    {}\n",
-        if report.same_status {
-            "same"
-        } else {
-            "DIFFERENT"
-        }
-    ));
-    out.push_str(&format!(
-        "  oracle result       {}\n",
-        if report.same_oracle {
-            "same"
-        } else {
-            "DIFFERENT"
-        }
-    ));
-    out.push_str(&format!(
-        "  verdict             {}\n\n",
-        if report.same_verdict {
-            "same"
-        } else {
-            "DIFFERENT"
-        }
-    ));
-    out.push_str("Evidence comparison\n");
-    for line in &report.evidence_changes {
-        out.push_str(&format!("  {line}\n"));
-    }
-    if !report.environment_changes.is_empty() {
-        out.push_str("\nRelevant environment changes\n");
-        for line in &report.environment_changes {
-            out.push_str(&format!("  {line}\n"));
-        }
-    }
-    if !report.notes.is_empty() {
-        out.push_str("\nNotes\n");
-        for line in &report.notes {
-            out.push_str(&format!("  {line}\n"));
-        }
-    }
-    out.push_str(
-        "\nA shared verdict alone does not make two executions equivalent; \
-         compare the evidence identities above.\n",
-    );
-    out
 }
 
 /// Captures accessor kept for tests/tools that work from a manifest.

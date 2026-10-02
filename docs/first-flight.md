@@ -67,15 +67,15 @@ Rules:
 - Useful flags: `--param name=value` (repeatable), `--store <path>`,
   `--json`.
 
-Output ends with a verdict and a receipt id:
+Output ends with a verdict and a receipt id (human presentation by Sartorial; `--json` stays bare schema):
 
 ```text
-Verdict
-  PROVEN
-  Deterministic evidence established that the tested claim was falsified
-  under the recorded conditions. This is not a universal proof...
+\^v^/  BAT RECEIPT  \^v^/
+> VERDICT  PROVEN
+Deterministic evidence established that the tested claim was falsified
+under the recorded conditions. This is not a universal proof...
 
-Receipt    receipt:sha256:...
+RECEIPT:   receipt:sha256:...
 ```
 
 ### What PROVEN means — and does not mean

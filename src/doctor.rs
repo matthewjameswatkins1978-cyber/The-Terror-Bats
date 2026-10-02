@@ -250,35 +250,3 @@ fn supervised_in(
         None
     }
 }
-
-pub fn render(report: &DoctorReport) -> String {
-    let mut out = String::new();
-    out.push_str(&format!(
-        "Terror Bat {}-first-flight\n\n",
-        report.terrorbat_version
-    ));
-    out.push_str("Core\n");
-    for c in &report.core {
-        out.push_str(&format!(
-            "  {:<26} {} {}\n",
-            c.name,
-            if c.ok { "OK  " } else { "FAIL" },
-            c.detail
-        ));
-    }
-    out.push_str("\nOptional tools\n");
-    for c in &report.optional_tools {
-        out.push_str(&format!("  {:<26} {}\n", c.name, c.detail));
-    }
-    out.push_str("\nIsolation\n");
-    for c in &report.isolation {
-        out.push_str(&format!("  {:<26} {}\n", c.name, c.detail));
-    }
-    out.push_str("\nOverall\n");
-    out.push_str(if report.overall_ready {
-        "  READY\n"
-    } else {
-        "  NOT READY (see FAIL entries above)\n"
-    });
-    out
-}

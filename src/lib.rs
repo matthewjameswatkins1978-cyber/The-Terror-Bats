@@ -16,6 +16,7 @@ pub mod identity;
 pub mod numeric;
 pub mod oracle;
 pub mod params;
+pub mod presentation;
 pub mod receipt;
 pub mod runner;
 pub mod spec;
