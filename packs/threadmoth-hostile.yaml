@@ -1,0 +1,52 @@
+{
+  "version": "terrorbat-pack/v1",
+  "id": "threadmoth-hostile",
+  "description": "Fifteen disposable hostile Threadmoth invariants; per-child receipts are authoritative.",
+  "bats": [
+    {
+      "path": "../bats/threadmoth/stale-preview.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/stale-plan.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/tampered-plan.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/path-prefix-escape.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/junction-symlink-escape.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/ambiguous-exact-match.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/candidate-guard-staleness.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/hard-budget-overrun.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/crlf-preservation.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/unicode-bom.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/transaction-rollback.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/certificate-byte-truth.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/replayed-identical-request.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/unknown-fields-strictness.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/malformed-structured-no-fallback.yaml"
+    }
+  ]
+}

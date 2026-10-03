@@ -1,0 +1,113 @@
+{
+  "version": "terrorbat/v1",
+  "id": "threadmoth-stale-preview",
+  "claim": {
+    "text": "A mutation authorized against stale preview bytes refuses and leaves exactly the intentional intervening bytes."
+  },
+  "requires": [
+    "process.spawn",
+    "fs.write",
+    "git.inspect"
+  ],
+  "attack": {
+    "setup": [
+      {
+        "adapter": "fs",
+        "action": "write",
+        "path": ".hostile-fixtures.py",
+        "from": "../../adapters/threadmoth/fixtures.py"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "prepare",
+          "stale-preview"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "adapter": "threadmoth",
+        "action": "preview",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/first.json"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "intervene",
+          "stale-preview"
+        ]
+      },
+      {
+        "adapter": "threadmoth",
+        "action": "mutate",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/result.json"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "check",
+          "stale-preview"
+        ]
+      }
+    ]
+  },
+  "oracle": {
+    "type": "json_value_equals",
+    "step": "run:3",
+    "pointer": "/violation",
+    "value": true
+  },
+  "evidence": {
+    "capture": [
+      "stdout",
+      "stderr",
+      "git_diff"
+    ]
+  },
+  "timeout": {
+    "setup": "30s",
+    "run": "90s",
+    "total": "120s"
+  },
+  "params": {
+    "python_program": {
+      "type": "string",
+      "default": "python"
+    },
+    "fixture_script": {
+      "type": "string",
+      "default": ".hostile-fixtures.py"
+    }
+  },
+  "meta": {
+    "tags": [
+      "threadmoth",
+      "hostile"
+    ],
+    "origin": "local"
+  }
+}
