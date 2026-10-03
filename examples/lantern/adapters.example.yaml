@@ -1,0 +1,15 @@
+version: terrorbat-adapters/v1
+adapters:
+  lantern:
+    program: ABSOLUTE_PATH_TO_PYTHON
+    args:
+      - -B
+      - ABSOLUTE_PATH_TO_TERRORBAT_LANTERN_PY
+      - --ledger-binary
+      - ABSOLUTE_PATH_TO_HOSTILE_LEDGER_TEST_EXE
+      - --bridge-binary
+      - ABSOLUTE_PATH_TO_LIGHTING_TEST_EXE
+      - --revision
+      - EXACT_LANTERN_FIXTURE_HEAD
+      - --product-revision
+      - EXACT_LANTERN_PRODUCT_ANCESTOR

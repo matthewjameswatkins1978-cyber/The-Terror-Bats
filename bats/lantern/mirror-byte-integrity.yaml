@@ -1,0 +1,24 @@
+version: terrorbat/v1
+id: lantern-mirror-byte-integrity
+claim:
+  text: Exported record bytes sidecar Git blob and manifest status agree exactly.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: mirror_probe
+      scenario: normal
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]

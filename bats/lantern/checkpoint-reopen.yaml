@@ -1,0 +1,24 @@
+version: terrorbat/v1
+id: lantern-checkpoint-reopen
+claim:
+  text: Restarted bridge cycles preserve all queued intents durable checkpoint and oldest-first mutation order.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: bridge_contract
+      scenario: restarted_cycles
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/checkpoint_violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]
