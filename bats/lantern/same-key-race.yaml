@@ -1,0 +1,25 @@
+version: terrorbat/v1
+id: lantern-same-key-race
+claim:
+  text: Equivalent simultaneous ledger writers converge to one durable record without user-level storage errors.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: ledger_history
+      scenario: race
+      writers: 2
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]

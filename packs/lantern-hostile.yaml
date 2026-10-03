@@ -1,0 +1,17 @@
+version: terrorbat-pack/v1
+id: lantern-hostile
+description: Real Lantern bridge store restart and byte integrity contracts using disposable fixtures.
+bats:
+  - path: ../bats/lantern/sequential-replay-reopen.yaml
+  - path: ../bats/lantern/rewritten-inbox-history.yaml
+  - path: ../bats/lantern/forbidden-intent-modification.yaml
+  - path: ../bats/lantern/oldest-first-ordering.yaml
+  - path: ../bats/lantern/authority-no-write.yaml
+  - path: ../bats/lantern/observed-hash-conflict.yaml
+  - path: ../bats/lantern/crash-replay-and-tamper.yaml
+  - path: ../bats/lantern/checkpoint-reopen.yaml
+  - path: ../bats/lantern/applied-state-reopen.yaml
+  - path: ../bats/lantern/bridge-repeated-cycle-idempotency.yaml
+  - path: ../bats/lantern/mirror-byte-integrity.yaml
+  - path: ../bats/lantern/crlf-lf-mirror-hostility.yaml
+  - path: ../bats/lantern/atomic-mirror-replacement.yaml

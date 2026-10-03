@@ -1,0 +1,24 @@
+version: terrorbat/v1
+id: lantern-atomic-mirror-replacement
+claim:
+  text: A rejected staged export leaves the complete last-known-good mirror unchanged.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: mirror_probe
+      scenario: atomic
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]

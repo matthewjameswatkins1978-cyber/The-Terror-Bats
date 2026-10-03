@@ -1,0 +1,24 @@
+version: terrorbat/v1
+id: lantern-crash-replay-and-tamper
+claim:
+  text: Applied intents replay without another endpoint mutation and modified payloads become suspect.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: bridge_contract
+      scenario: crash_replay_tamper
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]
