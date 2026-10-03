@@ -1,0 +1,5 @@
+version: terrorbat-pack/v1
+id: m8-external-demo-pack
+description: One ordinary Bat Campaign child using the external adapter fixture.
+bats:
+  - path: ../examples/m8/demo.yaml

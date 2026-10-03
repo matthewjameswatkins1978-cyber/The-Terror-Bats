@@ -753,6 +753,10 @@ fn run_verifier(
                 stderr: stderr_ref,
                 stderr_total_bytes: outcome.stderr_total,
                 stderr_truncated: outcome.stderr_total > outcome.stderr.len() as u64,
+                adapter_provenance: None,
+                protocol_stdout: None,
+                protocol_stderr: None,
+
                 wall_ms: outcome.wall_time.as_millis() as u64,
                 error: outcome.error,
             }
@@ -777,6 +781,10 @@ fn run_verifier(
             stderr: None,
             stderr_total_bytes: 0,
             stderr_truncated: false,
+            adapter_provenance: None,
+            protocol_stdout: None,
+            protocol_stderr: None,
+
             wall_ms: started.elapsed().as_millis() as u64,
             error: Some(e.to_string()),
         },

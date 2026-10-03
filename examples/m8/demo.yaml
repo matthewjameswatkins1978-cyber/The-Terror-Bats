@@ -1,0 +1,22 @@
+version: terrorbat/v1
+id: m8-external-demo
+claim:
+  text: The external adapter mutation is visible to the deterministic oracle.
+requires:
+  - fs.write
+  - process.spawn
+  - git.inspect
+attack:
+  setup:
+    - adapter: git
+      action: worktree.snapshot
+  run:
+    - adapter: fixture
+      action: mutate
+      mode: mutate
+oracle:
+  any:
+    - type: git_diff_contains
+      substring: written by external adapter
+evidence:
+  capture: [git_diff, stdout, stderr]

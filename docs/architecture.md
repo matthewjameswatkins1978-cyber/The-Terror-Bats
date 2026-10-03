@@ -177,7 +177,7 @@ Git inspection
 AI agent tasks
 ```
 
-Initial external adapter protocol direction: **JSON / JSONL over stdin/stdout**. This is provisional in M0; the protocol is specified no earlier than M8.
+M8 implements the versioned `terrorbat-adapter/v1` one-shot JSONL protocol over supervised stdio. See [external-adapter-v1.md](external-adapter-v1.md) for its binding schema, failure mapping, provenance, and replay contract.
 
 Complex behaviour belongs in adapters, never in the Bat Spec (Constitution 16).
 
@@ -212,7 +212,7 @@ Human names remain labels; content identity is canonical where appropriate (Cons
 
 **M1 implementation status.** `bat:`, `claim:`, `attack:`, and `oracle:` identities are implemented: each is SHA-256 over RFC 8785 canonical JSON of the resolved semantic component (see [bat-spec-v0.md](bat-spec-v0.md) §13). `environment.relevant` declarations are part of Bat identity; actual machine values are never inspected or hashed. Run, evidence, and receipt identities, and cache lookup, are later milestones.
 
-**W2 implementation status.** Bat Packs (`pack:sha256:` over the canonical `{version, bats}` projection) and serial Campaigns (`campaign:sha256:` aggregates that reference — never copy — child receipts) are implemented. A campaign is not a retry mechanism: every child is a first-class ordinary run, later results never overwrite earlier ones, and the target HEAD is pinned at campaign start and re-checked before every child. Campaigns stay serial: child order is part of the evidence, and parallel execution would trade determinism for speed Terror Bat has not earned yet. Minimisation, if it ever comes, follows reliable reproduction — it never precedes it. AI discovery stays outside deterministic proof (Constitution 8, §7). Full evidence reuse/caching remains M7; the external adapter protocol remains M8.
+**W2 implementation status.** Bat Packs (`pack:sha256:` over the canonical `{version, bats}` projection) and serial Campaigns (`campaign:sha256:` aggregates that reference — never copy — child receipts) are implemented. A campaign is not a retry mechanism: every child is a first-class ordinary run, later results never overwrite earlier ones, and the target HEAD is pinned at campaign start and re-checked before every child. Campaigns stay serial: child order is part of the evidence, and parallel execution would trade determinism for speed Terror Bat has not earned yet. Minimisation, if it ever comes, follows reliable reproduction — it never precedes it. AI discovery stays outside deterministic proof (Constitution 8, §7). Full evidence reuse/caching remains M7. M8 external adapters use explicit local bindings and remain outside Pack identity.
 
 Conceptual run identity:
 
@@ -282,7 +282,7 @@ KILL / CONTINUE GATE
 --------------------------
 
 M7    Evidence reuse and explainable caching
-M8    External adapter protocol
+M8    External adapter protocol — implemented as `terrorbat-adapter/v1`
 M9    AI discovery/generation
 M10   Terror Bat attacks Terror Bat
 
@@ -325,7 +325,7 @@ Implementation may begin only when M0 clearly defines:
 Known ambiguities are recorded explicitly rather than hidden:
 
 - The oracle condition grammar is intentionally minimal in v0; its exact form is an M5 decision.
-- The adapter protocol is a direction, not a contract (M8).
+- External adapters are user-authorised programs; worktree isolation is not a sandbox (M8, [protocol contract](external-adapter-v1.md)).
 - Run-identity environment inputs: which facts are "relevant" is per-Bat declared via `environment.relevant` (declaration mechanism resolved by M1 — see [bat-spec-v0.md](bat-spec-v0.md) §12); combining declarations with captured values for run identity is still future work.
 - Mapping rules from (execution status, oracle result) to receipt verdicts beyond the hard rules in §4 are specified in receipt-v0 §2 but will need case-law from Bat Zero.
 

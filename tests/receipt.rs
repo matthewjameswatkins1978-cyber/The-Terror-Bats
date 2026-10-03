@@ -415,6 +415,16 @@ fn receipt_identity_is_content_determined() {
     // compute_id excludes the id field itself, so recomputation is stable.
     let again = receipt::compute_id(&out.receipt).expect("recompute");
     assert_eq!(again, out.receipt.receipt_id);
+
+    // M8's optional fields are absent from built-in-only receipt content, so
+    // the established serialization and content identity remain compatible.
+    let content = serde_json::to_value(&out.receipt).expect("receipt JSON");
+    assert!(content.get("adapter_bindings_required").is_none());
+    let step = &content["execution"]["steps"][0];
+    for field in ["adapter_provenance", "protocol_stdout", "protocol_stderr"] {
+        assert!(step.get(field).is_none(), "built-in step gained `{field}`");
+    }
+    receipt::load_receipt(&out.run_dir).expect("built-in receipt still verifies");
 }
 
 // ---------------------------------------------------------------------------

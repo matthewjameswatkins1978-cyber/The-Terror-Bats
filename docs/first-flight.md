@@ -209,7 +209,7 @@ terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --run
 terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
 ```
 
-A retry re-runs *until something works*; a campaign re-runs *to see what holds* — later results never overwrite earlier ones, and `stop-on-proven` halts only after a durably persisted PROVEN receipt. Campaign receipts (`campaign:sha256:…`) reference child receipts without copying evidence. The shipped `packs\first-flight.yaml` is a demonstrator only and carries no assurance-profile claims. Full evidence reuse/caching (Constitution 13) and the external adapter protocol come later; W2 deliberately adds neither.
+A retry re-runs *until something works*; a campaign re-runs *to see what holds* — later results never overwrite earlier ones, and `stop-on-proven` halts only after a durably persisted PROVEN receipt. Campaign receipts (`campaign:sha256:…`) reference child receipts without copying evidence. The shipped `packs\first-flight.yaml` is a demonstrator only and carries no assurance-profile claims. Full evidence reuse/caching (Constitution 13) remains future work. External adapters are available through the M8 stdio protocol; see [External Adapter Protocol v1](external-adapter-v1.md).
 
 ## Known limitations (First Flight)
 

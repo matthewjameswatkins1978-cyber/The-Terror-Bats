@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::adapter;
 use crate::error::{Error, Result};
 use crate::evidence::{EvidenceStore, sha256_hex};
 use crate::oracle::OracleResult;
@@ -441,7 +442,24 @@ pub fn exit_code_for_campaign(campaign: &CampaignReceipt) -> u8 {
 /// target corruption); already-finalised ordinary child receipts stay
 /// valid, but no campaign receipt is written.
 pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
-    run_campaign_with_hook(opts, &mut |_, _| Ok(()))
+    run_campaign_with_adapters(opts, None)
+}
+
+pub fn run_campaign_with_adapters(
+    opts: &CampaignOptions,
+    bindings_path: Option<&Path>,
+) -> Result<CampaignOutput> {
+    let bindings =
+        adapter::load_bindings(bindings_path).map_err(|e| Error::spec(&opts.pack_path, e))?;
+    run_campaign_with_config(opts, bindings.as_ref(), &mut |_, _| Ok(()))
+}
+
+#[doc(hidden)]
+pub fn run_campaign_with_hook(
+    opts: &CampaignOptions,
+    before_child: &mut dyn FnMut(u64, usize) -> Result<()>,
+) -> Result<CampaignOutput> {
+    run_campaign_with_config(opts, None, before_child)
 }
 
 /// [`run_campaign`] with a test-only seam: `before_child` runs after pack
@@ -453,8 +471,9 @@ pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
 /// cannot enter a trusted campaign. It is not a watcher, daemon, or
 /// snapshot system.
 #[doc(hidden)]
-pub fn run_campaign_with_hook(
+fn run_campaign_with_config(
     opts: &CampaignOptions,
+    bindings: Option<&adapter::BindingsFile>,
     before_child: &mut dyn FnMut(u64, usize) -> Result<()>,
 ) -> Result<CampaignOutput> {
     validate_runs(opts.runs)?;
@@ -496,6 +515,7 @@ pub fn run_campaign_with_hook(
     let mut stopped_early = false;
     let mut stop_reason: Option<String> = None;
 
+    let mut pinned_adapter_ids = BTreeMap::new();
     let mut halted = false;
     for iteration in 1..=opts.runs {
         if halted {
@@ -545,7 +565,11 @@ pub fn run_campaign_with_hook(
                 store_root: Some(store_root.clone()),
                 overrides: entry.overrides.clone(),
             };
-            let out = crate::runner::run_bat(&run_opts)?;
+            let out = crate::runner::run_bat_with_adapter_expectations(
+                &run_opts,
+                bindings,
+                Some(&pinned_adapter_ids),
+            )?;
             // run_bat durably persists the receipt before returning; reload
             // through the trusted path so only verified content enters the
             // campaign record. The executed Bat must still be the
@@ -554,6 +578,37 @@ pub fn run_campaign_with_hook(
             // otherwise execute different semantics under the original
             // identity.
             let receipt = crate::receipt::load_receipt(&out.run_dir)?;
+            if receipt
+                .limitations
+                .iter()
+                .any(|note| note.starts_with("adapter description identities changed:"))
+            {
+                return Err(Error::spec(
+                    &entry.resolved,
+                    "adapter description identity changed during campaign; refusing to write a campaign receipt",
+                ));
+            }
+            let child_adapter_ids: BTreeMap<String, String> = receipt
+                .execution
+                .steps
+                .iter()
+                .filter_map(|step| {
+                    step.adapter_provenance
+                        .as_ref()
+                        .map(|p| (p.name.clone(), p.description_id.clone()))
+                })
+                .collect();
+            if pinned_adapter_ids.iter().any(|(name, id)| {
+                child_adapter_ids
+                    .get(name)
+                    .is_some_and(|actual| actual != id)
+            }) {
+                return Err(Error::spec(
+                    &entry.resolved,
+                    "adapter description identity changed during campaign; refusing to write a campaign receipt",
+                ));
+            }
+            pinned_adapter_ids.extend(child_adapter_ids);
             if receipt.bat.bat_sha != entry.bat {
                 return Err(Error::spec(
                     &entry.resolved,

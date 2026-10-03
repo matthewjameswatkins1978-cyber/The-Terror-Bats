@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::adapter::{self, AdapterProvenance, ResolvedAdapters};
 use crate::builtins::{self, StepCtx, StepError};
 use crate::error::{Error, Result};
 use crate::evidence::{EvidenceRef, EvidenceStore, OperationLog, unix_ms};
@@ -91,6 +92,12 @@ pub struct StepRecord {
     pub stderr: Option<EvidenceRef>,
     pub stderr_total_bytes: u64,
     pub stderr_truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter_provenance: Option<AdapterProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_stdout: Option<EvidenceRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_stderr: Option<EvidenceRef>,
     pub wall_ms: u64,
     pub error: Option<String>,
 }
@@ -199,6 +206,8 @@ pub struct RunManifest {
     pub verdict: Option<Verdict>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub adapter_bindings_required: bool,
 }
 
 pub struct RunOptions {
@@ -218,6 +227,21 @@ pub struct RunOutput {
 
 /// Execute one Bat against one target repository.
 pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
+    run_bat_with_adapters(opts, None)
+}
+
+pub fn run_bat_with_adapters(
+    opts: &RunOptions,
+    bindings: Option<&adapter::BindingsFile>,
+) -> Result<RunOutput> {
+    run_bat_with_adapter_expectations(opts, bindings, None)
+}
+
+pub fn run_bat_with_adapter_expectations(
+    opts: &RunOptions,
+    bindings: Option<&adapter::BindingsFile>,
+    expected: Option<&BTreeMap<String, String>>,
+) -> Result<RunOutput> {
     let started_unix = unix_ms() as u64;
     let started = Instant::now();
 
@@ -358,6 +382,12 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
             oracle: Some(oracle_block.clone()),
             verdict: Some(verdict),
             receipt_id: None,
+            adapter_bindings_required: spec
+                .attack
+                .setup
+                .iter()
+                .chain(&spec.attack.run)
+                .any(|step| !adapter::is_builtin(&step.adapter)),
         };
         let final_receipt =
             receipt::finalise(receipt::build(&manifest, &claim_text, oracle_block))?;
@@ -434,7 +464,92 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
             &mut oplog,
         );
     }
-    oplog.record("preflight_ok", json!({}))?;
+    let adapter_steps: Vec<(&str, &str, &str)> = spec
+        .attack
+        .setup
+        .iter()
+        .map(|s| ("attack.setup", s.adapter.as_str(), s.action.as_str()))
+        .chain(
+            spec.attack
+                .run
+                .iter()
+                .map(|s| ("attack.run", s.adapter.as_str(), s.action.as_str())),
+        )
+        .collect();
+    let mut resolved_adapters =
+        match adapter::resolve(bindings, &adapter_steps, &spec.requires, &spec.forbids) {
+            Ok(resolved) => resolved,
+            Err(failure) => {
+                limitations.push(failure.message.clone());
+                oplog.record(
+                    "adapter_preflight_failed",
+                    json!({ "status": failure.status, "error": failure.message }),
+                )?;
+                return finish(
+                    failure.status,
+                    Vec::new(),
+                    Captures::default(),
+                    WorktreeRecord {
+                        path: None,
+                        cleanup: CleanupRecord {
+                            status: CleanupStatus::NotAttempted,
+                            path: None,
+                            error: None,
+                        },
+                    },
+                    limitations,
+                    None,
+                    &mut oplog,
+                );
+            }
+        };
+    for (name, resolved) in &mut resolved_adapters.by_name {
+        if !resolved.describe_stderr.is_empty() {
+            let reference = store.put(&resolved.describe_stderr)?;
+            resolved.provenance.describe_stderr = Some(reference.clone());
+            oplog.record(
+                "adapter_describe_diagnostics",
+                json!({ "adapter": name, "evidence": reference }),
+            )?;
+        }
+    }
+    if let Some(expected) = expected {
+        let actual: BTreeMap<String, String> = resolved_adapters
+            .by_name
+            .iter()
+            .map(|(name, a)| (name.clone(), a.provenance.description_id.clone()))
+            .collect();
+        if expected
+            .iter()
+            .any(|(name, id)| actual.get(name) != Some(id))
+        {
+            let message = format!(
+                "adapter description identities changed: expected {expected:?}, received {actual:?}"
+            );
+            limitations.push(message.clone());
+            oplog.record("adapter_identity_mismatch", json!({ "error": message }))?;
+            return finish(
+                RunStatus::Invalid,
+                Vec::new(),
+                Captures::default(),
+                WorktreeRecord {
+                    path: None,
+                    cleanup: CleanupRecord {
+                        status: CleanupStatus::NotAttempted,
+                        path: None,
+                        error: None,
+                    },
+                },
+                limitations,
+                None,
+                &mut oplog,
+            );
+        }
+    }
+    oplog.record(
+        "preflight_ok",
+        json!({ "external_adapters": resolved_adapters.by_name.len() }),
+    )?;
 
     // --- disposable worktree ----------------------------------------------
     let wt_path = worktree::worktree_path(&execution_id)?;
@@ -470,6 +585,8 @@ pub fn run_bat(opts: &RunOptions) -> Result<RunOutput> {
         &spec_dir,
         &wt_path,
         &target,
+        &resolved_adapters,
+        &execution_id,
         &store,
         &mut oplog,
         &mut limitations,
@@ -514,6 +631,8 @@ fn execute_attack(
     spec_dir: &Path,
     wt_path: &Path,
     target: &TargetState,
+    adapters: &ResolvedAdapters,
+    execution_id: &str,
     store: &EvidenceStore,
     oplog: &mut OperationLog,
     limitations: &mut Vec<String>,
@@ -578,6 +697,9 @@ fn execute_attack(
             wt_path,
             stage_end,
             total_budget.map(|b| attack_start + b),
+            adapters,
+            &target.commit,
+            execution_id,
             store,
             oplog,
             &mut steps,
@@ -646,6 +768,9 @@ fn execute_phase(
     wt_path: &Path,
     stage_end: Option<Instant>,
     total_end: Option<Instant>,
+    adapters: &ResolvedAdapters,
+    target_commit: &str,
+    execution_id: &str,
     store: &EvidenceStore,
     oplog: &mut OperationLog,
     records: &mut Vec<StepRecord>,
@@ -679,6 +804,10 @@ fn execute_phase(
                 stderr: None,
                 stderr_total_bytes: 0,
                 stderr_truncated: false,
+                adapter_provenance: None,
+                protocol_stdout: None,
+                protocol_stderr: None,
+
                 wall_ms: 0,
                 error: Some(format!(
                     "{phase} budget exhausted before step {index} started"
@@ -705,61 +834,124 @@ fn execute_phase(
             deadline: remaining,
         };
         let started = Instant::now();
-        let dispatched = builtins::dispatch(&step.adapter, &step.action, &step.payload, &ctx);
-        let record = match dispatched {
-            Ok(outcome) => {
-                let stdout_ref = store.put(&outcome.stdout)?;
-                let stderr_ref = store.put(&outcome.stderr)?;
-                StepRecord {
-                    phase: phase.to_string(),
-                    index,
-                    adapter: step.adapter.clone(),
-                    action: step.action.clone(),
-                    payload: Value::Object(
-                        step.payload
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect(),
-                    ),
-                    status: RunStatus::from(outcome.status),
-                    exit_code: outcome.exit_code,
-                    signal: outcome.signal,
-                    stdout: Some(stdout_ref),
-                    stdout_total_bytes: outcome.stdout_total,
-                    stdout_truncated: outcome.stdout_total > outcome.stdout.len() as u64,
-                    stderr: Some(stderr_ref),
-                    stderr_total_bytes: outcome.stderr_total,
-                    stderr_truncated: outcome.stderr_total > outcome.stderr.len() as u64,
-                    wall_ms: outcome.wall_time.as_millis() as u64,
-                    error: outcome.error,
-                }
+        let (
+            status,
+            exit_code,
+            signal,
+            stdout_bytes,
+            stdout_total,
+            stderr_bytes,
+            stderr_total,
+            wall_time,
+            error,
+            provenance,
+            protocol_stdout,
+            protocol_stderr,
+        ) = if adapter::is_builtin(&step.adapter) {
+            match builtins::dispatch(&step.adapter, &step.action, &step.payload, &ctx) {
+                Ok(out) => (
+                    RunStatus::from(out.status),
+                    out.exit_code,
+                    out.signal,
+                    Some(out.stdout),
+                    out.stdout_total,
+                    Some(out.stderr),
+                    out.stderr_total,
+                    out.wall_time,
+                    out.error,
+                    None,
+                    None,
+                    None,
+                ),
+                Err(e) => (
+                    RunStatus::from(&e),
+                    None,
+                    None,
+                    None,
+                    0,
+                    None,
+                    0,
+                    started.elapsed(),
+                    Some(e.to_string()),
+                    None,
+                    None,
+                    None,
+                ),
             }
-            Err(e) => {
-                let status = RunStatus::from(&e);
-                StepRecord {
-                    phase: phase.to_string(),
-                    index,
-                    adapter: step.adapter.clone(),
-                    action: step.action.clone(),
-                    payload: Value::Object(
-                        step.payload
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect(),
-                    ),
-                    status,
-                    exit_code: None,
-                    signal: None,
-                    stdout: None,
-                    stdout_total_bytes: 0,
-                    stdout_truncated: false,
-                    stderr: None,
-                    stderr_total_bytes: 0,
-                    stderr_truncated: false,
-                    wall_ms: started.elapsed().as_millis() as u64,
-                    error: Some(e.to_string()),
-                }
-            }
+        } else {
+            let resolved = adapters
+                .by_name
+                .get(&step.adapter)
+                .expect("external steps are resolved during preflight");
+            let out = adapter::execute(adapter::AdapterInvocation {
+                adapter: resolved,
+                action: &step.action,
+                payload: &step.payload,
+                worktree: wt_path,
+                target_commit,
+                execution_id,
+                phase,
+                step_index: index,
+                deadline: remaining,
+            });
+            let stdout_total = out.stdout.len() as u64;
+            let stderr_total = out.stderr.len() as u64;
+            (
+                out.status,
+                out.exit_code,
+                out.signal,
+                Some(out.stdout),
+                stdout_total,
+                Some(out.stderr),
+                stderr_total,
+                out.wall_time,
+                out.error,
+                Some(out.provenance),
+                Some(out.protocol_stdout),
+                Some(out.protocol_stderr),
+            )
+        };
+        let stdout_ref = stdout_bytes.as_deref().map(|b| store.put(b)).transpose()?;
+        let stderr_ref = stderr_bytes.as_deref().map(|b| store.put(b)).transpose()?;
+        let protocol_stdout_ref = protocol_stdout
+            .as_deref()
+            .filter(|b| !b.is_empty())
+            .map(|b| store.put(b))
+            .transpose()?;
+        let protocol_stderr_ref = protocol_stderr
+            .as_deref()
+            .filter(|b| !b.is_empty())
+            .map(|b| store.put(b))
+            .transpose()?;
+        let record = StepRecord {
+            phase: phase.to_string(),
+            index,
+            adapter: step.adapter.clone(),
+            action: step.action.clone(),
+            payload: Value::Object(
+                step.payload
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            ),
+            status,
+            exit_code,
+            signal,
+            stdout: stdout_ref,
+            stdout_total_bytes: stdout_total,
+            stdout_truncated: stdout_bytes
+                .as_ref()
+                .is_some_and(|b| stdout_total > b.len() as u64),
+            stderr: stderr_ref,
+            stderr_total_bytes: stderr_total,
+            stderr_truncated: stderr_bytes
+                .as_ref()
+                .is_some_and(|b| stderr_total > b.len() as u64),
+            adapter_provenance: provenance,
+            protocol_stdout: protocol_stdout_ref,
+            protocol_stderr: protocol_stderr_ref,
+            wall_ms: wall_time.as_millis() as u64,
+            error,
         };
         oplog.record(
             "step_finish",
@@ -891,6 +1083,9 @@ fn preflight_capabilities(
     ] {
         for (i, step) in steps.iter().enumerate() {
             let Some(cap) = builtins::required_capability(&step.adapter, &step.action) else {
+                if !adapter::is_builtin(&step.adapter) {
+                    continue;
+                }
                 return Err((
                     RunStatus::Invalid,
                     format!(
@@ -948,6 +1143,10 @@ fn capability_names(caps: &[Capability]) -> BTreeSet<String> {
     caps.iter()
         .map(|c| c.0.split(':').next().unwrap_or(&c.0).trim().to_string())
         .collect()
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn capabilities_record(spec: &BatSpec) -> CapabilitiesRecord {

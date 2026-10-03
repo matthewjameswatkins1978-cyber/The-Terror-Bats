@@ -47,6 +47,9 @@ fn step_record(
         stderr,
         stderr_total_bytes: 0,
         stderr_truncated: false,
+        adapter_provenance: None,
+        protocol_stdout: None,
+        protocol_stderr: None,
         wall_ms: 1,
         error: None,
     }
