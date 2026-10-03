@@ -12,7 +12,9 @@
 //! resolve pack → pin target HEAD → for each iteration × entry (in order):
 //!   re-inspect target (dirty or moved HEAD refuses the campaign)
 //!   → run_bat (ordinary run, durably persisted)
-//!   → trusted reload of the child receipt
+//!   → trusted reload of the child receipt; the executed Bat identity must
+//!     still match the pack identification (provenance drift refuses the
+//!     campaign and no campaign receipt is written)
 //!   → stop only after a durably persisted PROVEN (with --stop-on-proven)
 //! → content-addressed campaign receipt in campaigns/<uuid>/campaign.json
 //! ```
@@ -87,8 +89,9 @@ pub struct CampaignReceipt {
     pub target_commit: String,
     pub requested_runs: u64,
     /// Iterations in which every pack entry ran. A stop-on-proven halt
-    /// mid-iteration leaves that partial iteration uncounted; its children
-    /// are still recorded individually below.
+    /// before the final entry leaves that partial iteration uncounted; a
+    /// halt on the final entry still counts the fully-run iteration. The
+    /// partial iteration's children are still recorded individually below.
     pub completed_runs: u64,
     pub stopped_early: bool,
     pub stop_reason: Option<String>,
@@ -225,6 +228,19 @@ fn parse_campaign_unverified(path: &Path) -> Result<CampaignReceipt> {
 /// Verify a campaign's own integrity: id format, then recomputed canonical
 /// identity. Fails closed; never repairs, never warns-and-continues.
 fn verify_campaign(campaign: &CampaignReceipt, path: &Path) -> Result<()> {
+    // Versioned durable schema: only the exact supported version is
+    // trusted. Anything else fails closed — no upgrades, aliases, or
+    // negotiation.
+    if campaign.version != CAMPAIGN_VERSION {
+        return Err(Error::campaign(
+            path,
+            format!(
+                "CORRUPT campaign: unsupported campaign version `{}` (supported: `{}`). The \
+                 campaign was not trusted.\n\nCode: TB-CAMPAIGN-CORRUPT",
+                campaign.version, CAMPAIGN_VERSION
+            ),
+        ));
+    }
     validate_campaign_id(&campaign.campaign_id)
         .map_err(|m| Error::campaign(path, format!("{m}\n\nCode: TB-CAMPAIGN-CORRUPT")))?;
     let computed = compute_id(campaign)?;
@@ -292,6 +308,17 @@ pub fn load_campaign(store: &EvidenceStore, campaign_dir: &Path) -> Result<Campa
                      receipt (receipt id, status, oracle result, or verdict changed).\n\nCode: \
                      TB-CAMPAIGN-CORRUPT",
                     child.execution_id,
+                ),
+            ));
+        }
+        if live.bat.bat_sha != child.bat {
+            return Err(Error::campaign(
+                &path,
+                format!(
+                    "CORRUPT campaign: child execution `{}` records Bat identity `{}` but its \
+                     live trusted receipt records `{}` — the Bat semantics changed after pack \
+                     identification (provenance drift).\n\nCode: TB-CAMPAIGN-CORRUPT",
+                    child.execution_id, child.bat, live.bat.bat_sha,
                 ),
             ));
         }
@@ -406,7 +433,30 @@ pub fn exit_code_for_campaign(campaign: &CampaignReceipt) -> u8 {
 /// re-checked before every child: a dirty target or a moved HEAD refuses
 /// the campaign (already-completed children persist as ordinary runs, but
 /// no campaign receipt is written for a refused campaign).
+///
+/// Bat provenance is pinned the same way: the pack is identified once, and
+/// after every child's trusted receipt reload the executed Bat identity
+/// must still equal the pack-identified entry. A Bat file that changed
+/// after pack identification refuses the campaign (provenance drift, not
+/// target corruption); already-finalised ordinary child receipts stay
+/// valid, but no campaign receipt is written.
 pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
+    run_campaign_with_hook(opts, &mut |_, _| Ok(()))
+}
+
+/// [`run_campaign`] with a test-only seam: `before_child` runs after pack
+/// identification and the per-child target re-pin, before that child
+/// executes.
+///
+/// Hidden from product documentation: the only supported use is the
+/// regression proving that a Bat file changing after pack identification
+/// cannot enter a trusted campaign. It is not a watcher, daemon, or
+/// snapshot system.
+#[doc(hidden)]
+pub fn run_campaign_with_hook(
+    opts: &CampaignOptions,
+    before_child: &mut dyn FnMut(u64, usize) -> Result<()>,
+) -> Result<CampaignOutput> {
     validate_runs(opts.runs)?;
     let identified = crate::pack::identify_pack_file(&opts.pack_path)?;
 
@@ -451,6 +501,11 @@ pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
         if halted {
             break;
         }
+        // Only iterations in which every pack entry actually ran count as
+        // completed: a stop-on-proven halt before the final entry leaves
+        // the partial iteration uncounted, while a halt on the final entry
+        // still counts the fully-run iteration.
+        let mut iteration_complete = true;
         for (entry_index, entry) in identified.entries.iter().enumerate() {
             // Re-pin before EVERY child: the campaign never wanders.
             let current = crate::worktree::inspect_target(&opts.repo)?;
@@ -481,6 +536,9 @@ pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
                     ),
                 ));
             }
+            // Test seam: runs after the per-child target re-pin, before the
+            // child executes.
+            before_child(iteration, entry_index)?;
             let run_opts = RunOptions {
                 bat_path: entry.resolved.clone(),
                 repo: opts.repo.clone(),
@@ -490,14 +548,39 @@ pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
             let out = crate::runner::run_bat(&run_opts)?;
             // run_bat durably persists the receipt before returning; reload
             // through the trusted path so only verified content enters the
-            // campaign record.
+            // campaign record. The executed Bat must still be the
+            // pack-identified one: run_bat rereads the Bat file per child,
+            // so a Bat that changed after pack identification would
+            // otherwise execute different semantics under the original
+            // identity.
             let receipt = crate::receipt::load_receipt(&out.run_dir)?;
+            if receipt.bat.bat_sha != entry.bat {
+                return Err(Error::spec(
+                    &entry.resolved,
+                    format!(
+                        "Bat provenance drift: pack entry `{}` (iteration {iteration} entry \
+                         {entry_index}) was identified as `{}` when the pack was identified, \
+                         but the executed run's trusted receipt records `{}`. The Bat semantics \
+                         changed after pack identification. Refusing the campaign: the {} \
+                         completed child run(s) persist as ordinary runs, but no campaign \
+                         receipt is written for a campaign whose Bat semantics drifted. This is \
+                         provenance drift, not target corruption.",
+                        entry.path,
+                        entry.bat,
+                        receipt.bat.bat_sha,
+                        children.len()
+                    ),
+                ));
+            }
             let proven = receipt.verdict == Verdict::Proven;
             let receipt_id = receipt.receipt_id.clone();
             children.push(CampaignChildRecord {
                 iteration,
                 entry_index,
-                bat: entry.bat.clone(),
+                // Recorded from the verified live receipt, not merely the
+                // precomputed entry: the check above pins them equal, and
+                // the receipt is the authority.
+                bat: receipt.bat.bat_sha.clone(),
                 bat_id: entry.human_id.clone(),
                 execution_id: out.execution_id.clone(),
                 receipt_id: receipt_id.clone(),
@@ -514,11 +597,14 @@ pub fn run_campaign(opts: &CampaignOptions) -> Result<CampaignOutput> {
                     entry.human_id,
                 ));
                 halted = true;
+                if entry_index + 1 < identified.entries.len() {
+                    iteration_complete = false;
+                }
                 break;
             }
         }
-        if !halted {
-            completed_runs = iteration;
+        if iteration_complete {
+            completed_runs += 1;
         }
     }
 

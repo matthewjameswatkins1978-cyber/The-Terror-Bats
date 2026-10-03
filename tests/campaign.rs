@@ -254,8 +254,9 @@ fn stop_on_proven_halts_only_after_durable_proven() {
         reason.contains(&out.campaign.children[1].receipt_id),
         "{reason}"
     );
-    // Partial iteration is honestly uncounted.
-    assert_eq!(out.campaign.completed_runs, 0);
+    // The halt fired on the FINAL pack entry, so iteration 1 fully ran:
+    // it is honestly counted as completed.
+    assert_eq!(out.campaign.completed_runs, 1);
     assert_eq!(out.campaign.requested_runs, 5);
 
     // The PROVEN receipt was durably persisted BEFORE the halt: it reloads
@@ -538,4 +539,173 @@ fn campaign_rendering_is_honest() {
             "NOT OBSERVED must never read as `{word}`: {rendered2}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// W2 integrity repair regressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bat_change_after_pack_identification_refuses_campaign() {
+    // Two-entry pack; the second Bat file changes semantics (quiet
+    // observation becomes a falsifying attack) after pack identification
+    // but before its child executes.
+    let fx = fixture(
+        "camp-drift",
+        &[
+            ("q.yaml", quiet_bat("quiet")),
+            ("m.yaml", quiet_bat("mutable")),
+        ],
+        "  - path: q.yaml\n  - path: m.yaml\n",
+    );
+    let mutable_bat = fx.pack.parent().expect("pack dir").join("m.yaml");
+    let original_bat = terrorbat::pack::identify_pack_file(&fx.pack)
+        .expect("pack identifies")
+        .entries[1]
+        .bat
+        .clone();
+    let mut before_child = |iteration: u64, entry_index: usize| -> terrorbat::error::Result<()> {
+        if iteration == 1 && entry_index == 1 {
+            std::fs::write(&mutable_bat, falsifying_bat("mutable"))
+                .expect("rewrite bat mid-campaign");
+        }
+        Ok(())
+    };
+    let err = campaign::run_campaign_with_hook(&opts(&fx, 1, false), &mut before_child)
+        .expect_err("provenance drift must refuse the campaign");
+    let msg = err.to_string();
+    assert!(msg.contains("provenance drift"), "{msg}");
+    assert!(msg.contains(&original_bat), "{msg}");
+    assert!(msg.contains("not target corruption"), "{msg}");
+    // The refusal happens before any aggregate exists: it is spec-level,
+    // never a corrupt-campaign claim.
+    assert!(!msg.contains("TB-CAMPAIGN-CORRUPT"), "{msg}");
+
+    // No trusted receipt claims both children under the original pack: a
+    // campaign directory may linger, but none carries a campaign receipt.
+    let store = EvidenceStore::open(&fx.store).expect("store");
+    for uuid in store.list_campaigns() {
+        assert!(
+            !store.campaign_dir(&uuid).join("campaign.json").exists(),
+            "no campaign receipt may exist after a drift refusal"
+        );
+    }
+    // Both executed children persist as ordinary runs with valid receipts.
+    assert_eq!(store.list_runs().len(), 2);
+    let mut saw_quiet = false;
+    for run in store.list_runs() {
+        let live = terrorbat::receipt::load_receipt(&store.run_dir(&run))
+            .expect("ordinary receipt stays independently readable");
+        if live.verdict == Verdict::NotObserved {
+            saw_quiet = true;
+        }
+    }
+    // The prior ordinary child receipt (before the drift) stays
+    // independently readable through the trusted path.
+    assert!(
+        saw_quiet,
+        "the pre-drift ordinary child receipt must stay readable"
+    );
+}
+
+#[test]
+fn campaign_load_refuses_child_bat_identity_mismatch() {
+    let fx = single_quiet_pack();
+    let out = campaign::run_campaign(&opts(&fx, 1, false)).expect("campaign runs");
+
+    // Forge the aggregate's child Bat identity and re-hash, so the refusal
+    // exercises provenance enforcement rather than identity mismatch.
+    let text =
+        std::fs::read_to_string(out.campaign_dir.join("campaign.json")).expect("read campaign");
+    let mut camp: campaign::CampaignReceipt = serde_json::from_str(&text).expect("parse campaign");
+    let forged = format!("bat:sha256:{}", "f".repeat(64));
+    assert_ne!(camp.children[0].bat, forged);
+    camp.children[0].bat = forged.clone();
+    let camp = campaign::finalise(camp).expect("re-hash");
+    campaign::write_campaign(&out.campaign_dir, &camp).expect("write forged campaign");
+
+    let store = EvidenceStore::open(&fx.store).expect("store");
+    let err = campaign::load_campaign(&store, &out.campaign_dir).expect_err("must refuse");
+    let msg = err.to_string();
+    assert!(msg.contains("TB-CAMPAIGN-CORRUPT"), "{msg}");
+    assert!(msg.contains("provenance drift"), "{msg}");
+    assert!(msg.contains(&forged), "{msg}");
+}
+
+#[test]
+fn campaign_load_refuses_unsupported_schema_version() {
+    let fx = single_quiet_pack();
+    let out = campaign::run_campaign(&opts(&fx, 1, false)).expect("campaign runs");
+
+    // Alter the version and re-hash, so the refusal exercises version
+    // enforcement rather than identity mismatch.
+    let text =
+        std::fs::read_to_string(out.campaign_dir.join("campaign.json")).expect("read campaign");
+    let mut camp: campaign::CampaignReceipt = serde_json::from_str(&text).expect("parse campaign");
+    camp.version = "terrorbat/campaign/v2".to_string();
+    let camp = campaign::finalise(camp).expect("re-hash");
+    campaign::write_campaign(&out.campaign_dir, &camp).expect("write versioned campaign");
+
+    let store = EvidenceStore::open(&fx.store).expect("store");
+    let err = campaign::load_campaign(&store, &out.campaign_dir).expect_err("must refuse version");
+    let msg = err.to_string();
+    assert!(msg.contains("TB-CAMPAIGN-CORRUPT"), "{msg}");
+    assert!(msg.contains("terrorbat/campaign/v2"), "{msg}");
+    assert!(msg.contains(terrorbat::campaign::CAMPAIGN_VERSION), "{msg}");
+    assert!(msg.contains("not trusted"), "{msg}");
+}
+
+#[test]
+fn stop_on_final_entry_counts_the_completed_iteration() {
+    // Two-entry pack with PROVEN on the final entry: the iteration fully
+    // ran, so completed_runs is 1.
+    let fx = fixture(
+        "camp-finalstop",
+        &[
+            ("q.yaml", quiet_bat("quiet")),
+            ("loud.yaml", falsifying_bat("loud")),
+        ],
+        "  - path: q.yaml\n  - path: loud.yaml\n",
+    );
+    let out = campaign::run_campaign(&opts(&fx, 5, true)).expect("campaign runs");
+    assert_eq!(out.campaign.children.len(), 2);
+    assert!(out.campaign.stopped_early);
+    assert_eq!(out.campaign.completed_runs, 1);
+    assert_eq!(out.campaign.requested_runs, 5);
+}
+
+#[test]
+fn stop_before_final_entry_leaves_iteration_uncounted() {
+    // Three-entry pack with PROVEN mid-pack: children 2, completed 0.
+    let fx = fixture(
+        "camp-midstop",
+        &[
+            ("q.yaml", quiet_bat("quiet")),
+            ("loud.yaml", falsifying_bat("loud")),
+            ("never.yaml", quiet_bat("never")),
+        ],
+        "  - path: q.yaml\n  - path: loud.yaml\n  - path: never.yaml\n",
+    );
+    let out = campaign::run_campaign(&opts(&fx, 5, true)).expect("campaign runs");
+    assert_eq!(out.campaign.children.len(), 2);
+    assert_eq!(out.campaign.children[1].verdict, Verdict::Proven);
+    assert!(out.campaign.stopped_early);
+    assert_eq!(out.campaign.completed_runs, 0);
+    assert_eq!(out.campaign.requested_runs, 5);
+}
+
+#[test]
+fn single_entry_stop_on_proven_counts_the_completed_iteration() {
+    // A one-entry pack: the only entry IS the final entry, so a
+    // stop-on-proven halt still counts the fully-run iteration.
+    let fx = fixture(
+        "camp-singleton",
+        &[("loud.yaml", falsifying_bat("loud"))],
+        "  - path: loud.yaml\n",
+    );
+    let out = campaign::run_campaign(&opts(&fx, 3, true)).expect("campaign runs");
+    assert_eq!(out.campaign.children.len(), 1);
+    assert!(out.campaign.stopped_early);
+    assert_eq!(out.campaign.completed_runs, 1);
+    assert_eq!(out.campaign.requested_runs, 3);
 }
