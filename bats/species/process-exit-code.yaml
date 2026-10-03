@@ -1,0 +1,62 @@
+# Species: process-leaks — non-zero exit honesty.
+#
+# Claim:   every supervised step in this attack reports success.
+# Attack:  ask git to resolve a revision that cannot exist. Portable on
+#          any machine with git: deterministic non-zero exit, no shell,
+#          no timing dependence.
+# Oracle:  fires on the recorded non-zero exit. A framework that folded
+#          failures into success could never produce PROVEN here; the
+#          exit code is captured as evidence and judged mechanically.
+#
+# The rest of the family — orphan child, descendant tree, timeout,
+# killed parent, apparent success with a surviving process — is covered
+# by bats/orphan-process.yaml (timeout + heartbeat evidence, verdict
+# INCONCLUSIVE by the hard mapping: a timeout describes the run, never
+# the claim) with descendant-kill proofs in tests/supervisor.rs, and by
+# the timeout case in tests/species.rs. A leaked survivor writing
+# heartbeats after the kill would fail that test, not forge a verdict.
+#
+# Portable: git only. PROVEN on any machine with git installed.
+
+version: terrorbat/v1
+
+id: process-exit-code
+
+claim:
+  text: >
+    Every supervised step in this attack reports success.
+
+requires:
+  - process.spawn
+  - git.inspect
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: git
+      args:
+        - rev-parse
+        - --verify
+        - refs/heads/terrorbat-never-exists
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, process-leaks, exit-code, honesty]
+  description: >
+    Generic exit-honesty specimen: a deterministic non-zero exit must be
+    recorded as non-zero, never folded into success.

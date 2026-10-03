@@ -1,0 +1,60 @@
+# Species: durability — commit, close, reopen, inspect durable state.
+#
+# Claim:   the nominated durable path is never modified.
+# Attack:  a single write to the durable path.
+# Oracle:  judges ONLY durable git state (porcelain status / diff captured
+#          after the attack phase closes, in the disposable worktree, before
+#          cleanup). In-memory success — a zero exit, a success string on
+#          stdout — is never read as proof of persistence, and no stdout
+#          leg exists in this oracle.
+#
+# The reopen seam is exercised by replay: the receipt re-executes in a
+# fresh worktree and must reproduce the same verdict from fresh durable
+# state (see tests/species.rs). Crash/restart seams reduce to the same
+# rule: only bytes the oracle can re-read after a restart count.
+#
+# Portable: built-ins only. Against any clean repository: PROVEN.
+
+version: terrorbat/v1
+
+id: durability-reopen
+
+claim:
+  text: >
+    The nominated durable path is never modified; no write survives the
+    close/reopen seam into observable durable state.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: durable/state.txt
+      text: "durable-marker=1\n"
+
+oracle:
+  any:
+    - type: path_changed
+      path: durable/state.txt
+    - type: git_diff_contains
+      substring: durable-marker=1
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, durability, reopen, persistent-state]
+  description: >
+    Generic durability specimen: only re-readable git state can falsify.
+    In-memory success alone never proves persistence.
