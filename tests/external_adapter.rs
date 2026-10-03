@@ -65,6 +65,76 @@ fn run(f: &Fx, bat: &Path, bindings: Option<&Path>) -> runner::RunOutput {
     runner::run_bat_with_adapters(&opts, loaded.as_ref()).expect("run is persisted")
 }
 const QUIET: &str = "  all: []\n";
+
+fn assert_protocol_overflow(mode: &str, stream: &str, byte: u8) {
+    let f = fx(mode);
+    let b = bat(
+        &f,
+        "overflow.yaml",
+        "observe",
+        mode,
+        QUIET,
+        "timeout:\n  run: 10s\n",
+    );
+    let bind = binding(&f, "");
+    let out = run(&f, &b, Some(&bind));
+    assert_eq!(out.manifest.run_status, RunStatus::InfrastructureError);
+    assert_ne!(out.receipt.verdict, Verdict::Proven);
+    let step = &out.manifest.steps[0];
+    let (reference, total, truncated) = if stream == "stdout" {
+        (
+            step.protocol_stdout.as_ref().unwrap(),
+            step.protocol_stdout_total_bytes,
+            step.protocol_stdout_truncated,
+        )
+    } else {
+        (
+            step.protocol_stderr.as_ref().unwrap(),
+            step.protocol_stderr_total_bytes,
+            step.protocol_stderr_truncated,
+        )
+    };
+    assert_eq!(total, 1_048_576 + 37);
+    assert!(truncated);
+    let store = EvidenceStore::open(&f.store).unwrap();
+    assert_eq!(store.get(reference).unwrap(), vec![byte; 1_048_576]);
+    let evidence = out
+        .receipt
+        .evidence
+        .iter()
+        .find(|item| item.kind.ends_with(&format!(":protocol_{stream}")))
+        .unwrap();
+    assert!(evidence.truncated);
+    assert_eq!(&evidence.reference, reference);
+    assert!(
+        out.receipt
+            .limitations
+            .iter()
+            .any(|note| note.contains(&format!(
+                "protocol {stream} truncated: 1048576 of 1048613 bytes retained"
+            )))
+    );
+    let loaded = receipt::load_receipt(&out.run_dir).unwrap();
+    assert_eq!(
+        loaded.execution.steps[0].protocol_stdout_total_bytes,
+        step.protocol_stdout_total_bytes
+    );
+    assert_eq!(
+        loaded.execution.steps[0].protocol_stderr_total_bytes,
+        step.protocol_stderr_total_bytes
+    );
+    assert!(repo_is_clean(&f.repo));
+}
+
+#[test]
+fn protocol_stdout_overflow_retains_honest_evidence() {
+    assert_protocol_overflow("stdout-overflow", "stdout", b'x');
+}
+
+#[test]
+fn protocol_stderr_overflow_retains_honest_evidence() {
+    assert_protocol_overflow("stderr-overflow", "stderr", b'y');
+}
 #[test]
 fn replay_requires_explicit_bindings_and_rejects_description_mismatch() {
     let f = fx("adapter-replay");
@@ -408,6 +478,19 @@ fn campaigns_allow_heterogeneous_adapters_and_reject_repeated_name_drift() {
     let built_in_receipt = receipt::load_receipt(&built_in).expect("built-in child receipt");
     let value = serde_json::to_value(&built_in_receipt).expect("serialise receipt");
     assert!(!value.as_object().unwrap().contains_key("resolved_adapters"));
+    for step in value["execution"]["steps"].as_array().unwrap() {
+        for field in [
+            "protocol_stdout_total_bytes",
+            "protocol_stdout_truncated",
+            "protocol_stderr_total_bytes",
+            "protocol_stderr_truncated",
+        ] {
+            assert!(
+                !step.as_object().unwrap().contains_key(field),
+                "built-in step serialized {field}"
+            );
+        }
+    }
     assert!(
         !value
             .as_object()

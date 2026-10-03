@@ -1,6 +1,6 @@
 //! Deterministic executable fixture for the Terror Bat M8 protocol tests.
 use serde_json::{Value, json};
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
@@ -72,6 +72,19 @@ fn execute(mode_arg: &str, request: &Value) {
     }
     let payload = &request["payload"];
     let mode = payload["mode"].as_str().unwrap_or(mode_arg);
+    if mode == "stdout-overflow" {
+        io::stdout()
+            .lock()
+            .write_all(&vec![b'x'; 1_048_576 + 37])
+            .expect("overflow stdout");
+        return;
+    }
+    if mode == "stderr-overflow" {
+        io::stderr()
+            .lock()
+            .write_all(&vec![b'y'; 1_048_576 + 37])
+            .expect("overflow stderr");
+    }
     if mode == "hang" {
         std::thread::sleep(std::time::Duration::from_secs(10));
     }

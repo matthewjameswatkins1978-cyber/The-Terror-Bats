@@ -119,6 +119,10 @@ pub struct AdapterExecution {
     pub stderr: Vec<u8>,
     pub protocol_stdout: Vec<u8>,
     pub protocol_stderr: Vec<u8>,
+    pub protocol_stdout_total_bytes: u64,
+    pub protocol_stdout_truncated: bool,
+    pub protocol_stderr_total_bytes: u64,
+    pub protocol_stderr_truncated: bool,
     pub wall_time: Duration,
     pub error: Option<String>,
     pub provenance: AdapterProvenance,
@@ -490,6 +494,10 @@ pub fn execute(invocation: AdapterInvocation<'_>) -> AdapterExecution {
         stdout: response.stdout.into_bytes(),
         stderr: response.stderr.into_bytes(),
         protocol_stdout: Vec::new(),
+        protocol_stdout_total_bytes: out.stdout.total_bytes,
+        protocol_stdout_truncated: false,
+        protocol_stderr_total_bytes: out.stderr.total_bytes,
+        protocol_stderr_truncated: out.stderr.truncated(),
         protocol_stderr: out.stderr.bytes,
         wall_time: out.wall_time,
         error: (status != RunStatus::Completed).then(|| format!("adapter reported {status:?}")),
@@ -502,6 +510,10 @@ fn failed(
     adapter: &ResolvedAdapter,
     out: Option<SupervisedOutcome>,
 ) -> AdapterExecution {
+    let protocol_stdout_total_bytes = out.as_ref().map_or(0, |o| o.stdout.total_bytes);
+    let protocol_stderr_total_bytes = out.as_ref().map_or(0, |o| o.stderr.total_bytes);
+    let protocol_stdout_truncated = out.as_ref().is_some_and(|o| o.stdout.truncated());
+    let protocol_stderr_truncated = out.as_ref().is_some_and(|o| o.stderr.truncated());
     let (process_status, exit_code, signal, stdout, stderr, wall_time) = match out {
         Some(o) => (
             o.status,
@@ -536,6 +548,10 @@ fn failed(
         stderr: Vec::new(),
         protocol_stdout: stdout,
         protocol_stderr: stderr,
+        protocol_stdout_total_bytes,
+        protocol_stdout_truncated,
+        protocol_stderr_total_bytes,
+        protocol_stderr_truncated,
         wall_time,
         error: Some(message),
         provenance: adapter.provenance.clone(),

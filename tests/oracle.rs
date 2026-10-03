@@ -50,6 +50,10 @@ fn step_record(
         adapter_provenance: None,
         protocol_stdout: None,
         protocol_stderr: None,
+        protocol_stdout_total_bytes: 0,
+        protocol_stdout_truncated: false,
+        protocol_stderr_total_bytes: 0,
+        protocol_stderr_truncated: false,
         wall_ms: 1,
         error: None,
     }

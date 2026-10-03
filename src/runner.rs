@@ -98,6 +98,14 @@ pub struct StepRecord {
     pub protocol_stdout: Option<EvidenceRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protocol_stderr: Option<EvidenceRef>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub protocol_stdout_total_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub protocol_stdout_truncated: bool,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub protocol_stderr_total_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub protocol_stderr_truncated: bool,
     pub wall_ms: u64,
     pub error: Option<String>,
 }
@@ -817,6 +825,10 @@ fn execute_phase(
                 adapter_provenance: None,
                 protocol_stdout: None,
                 protocol_stderr: None,
+                protocol_stdout_total_bytes: 0,
+                protocol_stdout_truncated: false,
+                protocol_stderr_total_bytes: 0,
+                protocol_stderr_truncated: false,
 
                 wall_ms: 0,
                 error: Some(format!(
@@ -857,6 +869,10 @@ fn execute_phase(
             provenance,
             protocol_stdout,
             protocol_stderr,
+            protocol_stdout_total_bytes,
+            protocol_stdout_truncated,
+            protocol_stderr_total_bytes,
+            protocol_stderr_truncated,
         ) = if adapter::is_builtin(&step.adapter) {
             match builtins::dispatch(&step.adapter, &step.action, &step.payload, &ctx) {
                 Ok(out) => (
@@ -872,6 +888,10 @@ fn execute_phase(
                     None,
                     None,
                     None,
+                    0,
+                    false,
+                    0,
+                    false,
                 ),
                 Err(e) => (
                     RunStatus::from(&e),
@@ -886,6 +906,10 @@ fn execute_phase(
                     None,
                     None,
                     None,
+                    0,
+                    false,
+                    0,
+                    false,
                 ),
             }
         } else {
@@ -919,6 +943,10 @@ fn execute_phase(
                 Some(out.provenance),
                 Some(out.protocol_stdout),
                 Some(out.protocol_stderr),
+                out.protocol_stdout_total_bytes,
+                out.protocol_stdout_truncated,
+                out.protocol_stderr_total_bytes,
+                out.protocol_stderr_truncated,
             )
         };
         let stdout_ref = stdout_bytes.as_deref().map(|b| store.put(b)).transpose()?;
@@ -960,6 +988,10 @@ fn execute_phase(
             adapter_provenance: provenance,
             protocol_stdout: protocol_stdout_ref,
             protocol_stderr: protocol_stderr_ref,
+            protocol_stdout_total_bytes,
+            protocol_stdout_truncated,
+            protocol_stderr_total_bytes,
+            protocol_stderr_truncated,
             wall_ms: wall_time.as_millis() as u64,
             error,
         };
@@ -1155,6 +1187,10 @@ fn capability_names(caps: &[Capability]) -> BTreeSet<String> {
         .collect()
 }
 
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 fn is_false(value: &bool) -> bool {
     !value
 }
@@ -1239,6 +1275,27 @@ fn base_limitations() -> Vec<String> {
 fn collect_truncation_notes(steps: &[StepRecord], _captures: &Captures) -> Vec<String> {
     let mut notes = Vec::new();
     for step in steps {
+        for (stream, truncated, total) in [
+            (
+                "stdout",
+                step.protocol_stdout_truncated,
+                step.protocol_stdout_total_bytes,
+            ),
+            (
+                "stderr",
+                step.protocol_stderr_truncated,
+                step.protocol_stderr_total_bytes,
+            ),
+        ] {
+            if truncated {
+                notes.push(format!(
+                    "{}[{}] protocol {stream} truncated: {} of {total} bytes retained",
+                    step.phase,
+                    step.index,
+                    total.min(1024 * 1024),
+                ));
+            }
+        }
         if step.stdout_truncated {
             notes.push(format!(
                 "{}[{}] stdout truncated: {} of {} bytes retained",
