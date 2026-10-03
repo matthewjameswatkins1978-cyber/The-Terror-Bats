@@ -188,6 +188,45 @@ fn fs_read_missing_is_an_honest_error_never_a_finding() {
 }
 
 #[test]
+fn fs_read_retains_only_one_mebibyte_and_keeps_total_honest() {
+    let dir = TempDir::new("ua-read-bounded");
+    let wt = dir.join("wt");
+    let spec_dir = dir.join("specs");
+    std::fs::create_dir_all(&wt).expect("wt");
+    std::fs::create_dir_all(&spec_dir).expect("specs");
+    let expected = vec![b'x'; 1_048_576 + 37];
+    std::fs::write(wt.join("large.bin"), &expected).expect("write large fixture");
+    let out = dispatch(
+        "fs",
+        "read",
+        &str_payload(&[("path", "large.bin")]),
+        &ctx(&wt, &spec_dir),
+    )
+    .expect("bounded read");
+    assert_eq!(out.stdout.len(), 1_048_576);
+    assert_eq!(out.stdout, expected[..1_048_576]);
+    assert_eq!(out.stdout_total, (1_048_576 + 37) as u64);
+}
+
+#[test]
+fn fs_stat_reports_non_missing_metadata_errors_as_infrastructure() {
+    let dir = TempDir::new("ua-stat-not-directory");
+    let wt = dir.join("wt");
+    let spec_dir = dir.join("specs");
+    std::fs::create_dir_all(&wt).expect("wt");
+    std::fs::create_dir_all(&spec_dir).expect("specs");
+    let invalid_component = "x".repeat(300);
+    let err = dispatch(
+        "fs",
+        "stat",
+        &str_payload(&[("path", invalid_component.as_str())]),
+        &ctx(&wt, &spec_dir),
+    )
+    .expect_err("non-directory parent is not a missing leaf");
+    assert!(matches!(err, StepError::Io(_)), "got {err:?}");
+}
+
+#[test]
 fn fs_list_stat_digest_remove_flow() {
     let dir = TempDir::new("ua-flow");
     let wt = dir.join("wt");

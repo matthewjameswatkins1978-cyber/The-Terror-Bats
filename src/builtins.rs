@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -372,8 +373,11 @@ fn retained(bytes: Vec<u8>) -> (Vec<u8>, u64) {
 }
 
 fn ok_stdout(full: Vec<u8>, wall_time: std::time::Duration) -> StepOutcome {
-    let total = full.len() as u64;
-    let (stdout, _) = retained(full);
+    let (stdout, total) = retained(full);
+    ok_stdout_retained(stdout, total, wall_time)
+}
+
+fn ok_stdout_retained(stdout: Vec<u8>, total: u64, wall_time: std::time::Duration) -> StepOutcome {
     StepOutcome {
         status: ExecutionStatus::Completed,
         exit_code: Some(0),
@@ -387,17 +391,36 @@ fn ok_stdout(full: Vec<u8>, wall_time: std::time::Duration) -> StepOutcome {
     }
 }
 
-/// `fs.read`: read a worktree-relative file into step stdout, byte-preserving.
+/// `fs.read`: stream a worktree-relative file into step stdout, byte-preserving.
 /// Large files keep honest totals with bounded retention. A missing file is an
 /// infrastructure error; the oracle then yields Undetermined, never a finding.
+fn read_bounded(path: &Path) -> StepResult<(Vec<u8>, u64)> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| StepError::Io(format!("cannot read `{}`: {e}", path.display())))?;
+    let mut retained = Vec::with_capacity(FS_RETAIN_LIMIT);
+    let mut total = 0u64;
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|e| StepError::Io(format!("cannot read `{}`: {e}", path.display())))?;
+        if count == 0 {
+            break;
+        }
+        total = total.saturating_add(count as u64);
+        let keep = (FS_RETAIN_LIMIT - retained.len()).min(count);
+        retained.extend_from_slice(&buffer[..keep]);
+    }
+    Ok((retained, total))
+}
+
 fn fs_read(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
     let rel = payload_string(payload, "path")
         .ok_or_else(|| malformed("fs.read requires a string `path`"))?;
     let target = resolve_in_worktree(ctx.worktree, &rel)?;
     let start = std::time::Instant::now();
-    let bytes = std::fs::read(&target)
-        .map_err(|e| StepError::Io(format!("cannot read `{}`: {e}", target.display())))?;
-    Ok(ok_stdout(bytes, start.elapsed()))
+    let (bytes, total) = read_bounded(&target)?;
+    Ok(ok_stdout_retained(bytes, total, start.elapsed()))
 }
 
 /// `fs.list`: sorted directory listing on stdout, one entry per line —
@@ -459,8 +482,14 @@ fn fs_stat(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<S
     let start = std::time::Instant::now();
     let norm = rel.replace('\\', "/");
     let body = match std::fs::symlink_metadata(&target) {
-        Err(_) => {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             serde_json::json!({"path": norm, "kind": "missing", "size": null, "sha256": null})
+        }
+        Err(error) => {
+            return Err(StepError::Io(format!(
+                "cannot stat `{}`: {error}",
+                target.display()
+            )));
         }
         Ok(m) => {
             let ft = m.file_type();
