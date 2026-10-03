@@ -8,6 +8,7 @@
 //! Pipeline: PARSE → RESOLVE → CANONICALISE → IDENTIFY → RUN → EVIDENCE.
 
 pub mod builtins;
+pub mod campaign;
 pub mod canonical;
 pub mod doctor;
 pub mod error;

@@ -59,6 +59,9 @@ pub struct ResolvedEntry {
     pub human_id: String,
     /// Effective Bat content identity (`bat:sha256:...`, params resolved).
     pub bat: String,
+    /// Per-entry parameter VALUES rendered as `NAME=VALUE` override strings
+    /// (sorted by name), ready for `ParamOverrides::parse` / `run_bat`.
+    pub overrides: Vec<String>,
 }
 
 /// Everything a human or test needs from a successful pack identification.
@@ -301,6 +304,7 @@ pub fn identify_pack_file(path: &Path) -> Result<IdentifiedPack> {
             resolved,
             human_id: identified.human_id,
             bat: identified.identities.bat,
+            overrides: overrides_raw,
         });
     }
 
