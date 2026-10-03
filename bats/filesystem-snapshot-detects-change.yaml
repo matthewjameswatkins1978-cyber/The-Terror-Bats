@@ -1,0 +1,53 @@
+# Universal filesystem snapshot: change is detected
+
+# Claim:   writing a file leaves the worktree unmodified.
+# Attack:  digest the tree in setup, write one file in run.
+# Oracle:  path_changed fires on the probe path.
+# Result:  PROVEN on any healthy machine — the snapshot pattern in one Bat.
+#          Uses only universal adapters (filesystem + git observation).
+
+version: terrorbat/v1
+
+id: filesystem-snapshot-detects-change
+
+claim:
+  text: >
+    Writing a file leaves the worktree unmodified.
+
+requires:
+  - fs.write
+  - fs.read
+  - git.inspect
+
+attack:
+  setup:
+    - adapter: fs
+      action: digest
+      path: .
+  run:
+    - adapter: fs
+      action: write
+      path: tb-snapshot-probe.txt
+      text: probe
+
+oracle:
+  type: path_changed
+  path: tb-snapshot-probe.txt
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: builtin
+  tags: [universal, filesystem, snapshot]
+  description: >
+    Before/after snapshot primitive: fs.digest captures the tree, the oracle
+    judges the change. Adapters report reality; the Bat and oracle decide
+    what it means.

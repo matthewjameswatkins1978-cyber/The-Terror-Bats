@@ -52,6 +52,10 @@ pub enum RunStatus {
     PolicyDenied,
     Invalid,
     InfrastructureError,
+    /// A required platform capability is unavailable (e.g. symlink
+    /// privilege, missing OS facility). UNSUPPORTED is never a target
+    /// finding: the verdict is INCONCLUSIVE with an UNSUPPORTED note.
+    Unsupported,
 }
 
 impl From<ExecutionStatus> for RunStatus {
@@ -1298,6 +1302,7 @@ pub fn exit_code_for(run_status: RunStatus, verdict: Option<&str>) -> u8 {
         RunStatus::TimedOut
         | RunStatus::Crashed
         | RunStatus::Cancelled
+        | RunStatus::Unsupported
         | RunStatus::InfrastructureError => 3,
     }
 }
