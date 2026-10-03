@@ -212,6 +212,8 @@ Human names remain labels; content identity is canonical where appropriate (Cons
 
 **M1 implementation status.** `bat:`, `claim:`, `attack:`, and `oracle:` identities are implemented: each is SHA-256 over RFC 8785 canonical JSON of the resolved semantic component (see [bat-spec-v0.md](bat-spec-v0.md) §13). `environment.relevant` declarations are part of Bat identity; actual machine values are never inspected or hashed. Run, evidence, and receipt identities, and cache lookup, are later milestones.
 
+**W2 implementation status.** Bat Packs (`pack:sha256:` over the canonical `{version, bats}` projection) and serial Campaigns (`campaign:sha256:` aggregates that reference — never copy — child receipts) are implemented. A campaign is not a retry mechanism: every child is a first-class ordinary run, later results never overwrite earlier ones, and the target HEAD is pinned at campaign start and re-checked before every child. Campaigns stay serial: child order is part of the evidence, and parallel execution would trade determinism for speed Terror Bat has not earned yet. Minimisation, if it ever comes, follows reliable reproduction — it never precedes it. AI discovery stays outside deterministic proof (Constitution 8, §7). Full evidence reuse/caching remains M7; the external adapter protocol remains M8.
+
 Conceptual run identity:
 
 ```text

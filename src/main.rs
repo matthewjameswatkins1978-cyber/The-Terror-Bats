@@ -26,6 +26,11 @@ enum Command {
         #[command(subcommand)]
         command: SpecCommand,
     },
+    /// Bat Pack operations (validate manifests, identify packs).
+    Pack {
+        #[command(subcommand)]
+        command: PackCommand,
+    },
     /// Execute a Bat against a target repository in a disposable worktree.
     Run {
         /// Path to the Bat Spec YAML.
@@ -76,6 +81,57 @@ enum Command {
         #[arg(long)]
         store: Option<PathBuf>,
         /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PackCommand {
+    /// Validate a Bat Pack file and all of its effective Bats.
+    Check {
+        /// Path to the Bat Pack YAML.
+        pack: PathBuf,
+        /// Evidence store root (accepted for surface consistency; pack
+        /// validation performs no store reads or writes).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output (plain schema, never presentation).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the content identity of a Bat Pack and its entries.
+    Id {
+        /// Path to the Bat Pack YAML.
+        pack: PathBuf,
+        /// Evidence store root (accepted for surface consistency; pack
+        /// identification performs no store reads or writes).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output (plain schema, never presentation).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Execute a Bat Pack serially as a campaign: every entry runs in
+    /// declared order per iteration, each child a first-class ordinary run.
+    Run {
+        /// Path to the Bat Pack YAML.
+        pack: PathBuf,
+        /// Path to the target repository (must be clean; HEAD is pinned for
+        /// the whole campaign).
+        #[arg(long)]
+        repo: PathBuf,
+        /// Iterations over the pack entries (positive bounded integer).
+        #[arg(long, default_value_t = 1)]
+        runs: u64,
+        /// Stop scheduling further children after the first durably
+        /// persisted PROVEN receipt.
+        #[arg(long)]
+        stop_on_proven: bool,
+        /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
+        #[arg(long)]
+        store: Option<PathBuf>,
+        /// Machine-readable output (plain campaign schema, never presentation).
         #[arg(long)]
         json: bool,
     },
@@ -164,6 +220,70 @@ fn run() -> Result<u8, String> {
                 Ok(0)
             }
         },
+        Command::Pack { command } => match command {
+            PackCommand::Check { pack, store, json } => {
+                if let Some(root) = store {
+                    open_store(Some(root))?;
+                }
+                let identified =
+                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                if json {
+                    let text = serde_json::to_string_pretty(&identified.to_json())
+                        .map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    println!("OK  {}", identified.human_id);
+                }
+                Ok(0)
+            }
+            PackCommand::Id { pack, store, json } => {
+                if let Some(root) = store {
+                    open_store(Some(root))?;
+                }
+                let identified =
+                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                if json {
+                    let text = serde_json::to_string_pretty(&identified.to_json())
+                        .map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    println!("pack  {}", identified.identity);
+                    for entry in &identified.entries {
+                        println!("bat   {}  {}", entry.bat, entry.path);
+                    }
+                }
+                Ok(0)
+            }
+            PackCommand::Run {
+                pack,
+                repo,
+                runs,
+                stop_on_proven,
+                store,
+                json,
+            } => {
+                let opts = terrorbat::campaign::CampaignOptions {
+                    pack_path: pack,
+                    repo,
+                    store_root: store,
+                    runs,
+                    stop_on_proven,
+                };
+                let out = terrorbat::campaign::run_campaign(&opts).map_err(|e| e.to_string())?;
+                if json {
+                    let text =
+                        serde_json::to_string_pretty(&out.campaign).map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    let caps = terrorbat::presentation::detect_capabilities();
+                    println!(
+                        "{}",
+                        terrorbat::presentation::render_campaign(&out.campaign, &caps)
+                    );
+                }
+                Ok(terrorbat::campaign::exit_code_for_campaign(&out.campaign))
+            }
+        },
         Command::Run {
             bat,
             repo,
@@ -194,6 +314,9 @@ fn run() -> Result<u8, String> {
             ))
         }
         Command::Inspect { id, store, json } => {
+            if id.starts_with("campaign:sha256:") {
+                return inspect_campaign(&id, store, json);
+            }
             let store = open_store(store)?;
             let run_dir = terrorbat::receipt::locate_run(&store, &id)
                 .map_err(|e| e.to_string())?
@@ -273,6 +396,34 @@ fn run() -> Result<u8, String> {
             Ok(if report.overall_ready { 0 } else { 3 })
         }
     }
+}
+
+fn inspect_campaign(id: &str, store: Option<PathBuf>, json: bool) -> Result<u8, String> {
+    terrorbat::campaign::validate_campaign_id(id)?;
+    let store = open_store(store)?;
+    let campaign_dir = terrorbat::campaign::locate_campaign(&store, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            format!(
+                "no campaign with id `{id}` in store `{}`",
+                store.root().display()
+            )
+        })?;
+    // Trusted load: a corrupt campaign, corrupt child, or missing child
+    // refuses the aggregate here — success is never rendered over corruption.
+    let campaign =
+        terrorbat::campaign::load_campaign(&store, &campaign_dir).map_err(|e| e.to_string())?;
+    if json {
+        let text = serde_json::to_string_pretty(&campaign).map_err(|e| e.to_string())?;
+        println!("{text}");
+    } else {
+        let caps = terrorbat::presentation::detect_capabilities();
+        println!(
+            "{}",
+            terrorbat::presentation::render_campaign(&campaign, &caps)
+        );
+    }
+    Ok(0)
 }
 
 fn open_store(store: Option<PathBuf>) -> Result<terrorbat::evidence::EvidenceStore, String> {

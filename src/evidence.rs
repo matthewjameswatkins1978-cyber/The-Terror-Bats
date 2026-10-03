@@ -108,7 +108,7 @@ impl EvidenceStore {
 
     /// Open (creating if needed) a store at `root`.
     pub fn open(root: &Path) -> Result<EvidenceStore> {
-        for sub in ["objects", "runs", "temp"] {
+        for sub in ["objects", "runs", "campaigns", "temp"] {
             fs::create_dir_all(root.join(sub)).map_err(|e| {
                 Error::store(root, format!("cannot create store directory `{sub}`: {e}"))
             })?;
@@ -241,6 +241,42 @@ impl EvidenceStore {
         fs::create_dir_all(&dir)
             .map_err(|e| Error::store(&dir, format!("cannot create run directory: {e}")))?;
         Ok(dir)
+    }
+
+    pub fn campaign_dir(&self, campaign_uuid: &str) -> PathBuf {
+        self.root.join("campaigns").join(campaign_uuid)
+    }
+
+    /// Create a fresh campaign directory. Campaign directories are UUID-named
+    /// like run directories: a collision is a stop-the-world error, never a
+    /// silent overwrite. Child evidence is never duplicated here — the
+    /// campaign receipt only references child runs by id.
+    pub fn create_campaign_dir(&self, campaign_uuid: &str) -> Result<PathBuf> {
+        let dir = self.campaign_dir(campaign_uuid);
+        if dir.exists() {
+            return Err(Error::store(
+                &dir,
+                format!("campaign directory for `{campaign_uuid}` already exists"),
+            ));
+        }
+        fs::create_dir_all(&dir)
+            .map_err(|e| Error::store(&dir, format!("cannot create campaign directory: {e}")))?;
+        Ok(dir)
+    }
+
+    pub fn list_campaigns(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        if let Ok(entries) = fs::read_dir(self.root.join("campaigns")) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                {
+                    ids.push(name.to_string());
+                }
+            }
+        }
+        ids.sort();
+        ids
     }
 
     pub fn list_runs(&self) -> Vec<String> {

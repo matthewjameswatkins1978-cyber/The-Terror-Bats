@@ -8,6 +8,7 @@
 //! Pipeline: PARSE → RESOLVE → CANONICALISE → IDENTIFY → RUN → EVIDENCE.
 
 pub mod builtins;
+pub mod campaign;
 pub mod canonical;
 pub mod doctor;
 pub mod error;
@@ -15,6 +16,7 @@ pub mod evidence;
 pub mod identity;
 pub mod numeric;
 pub mod oracle;
+pub mod pack;
 pub mod params;
 pub mod presentation;
 pub mod receipt;
@@ -28,6 +30,7 @@ use std::path::Path;
 
 pub use error::{Error, Result};
 pub use identity::Identities;
+pub use pack::{IdentifiedPack, ResolvedEntry};
 pub use params::ParamOverrides;
 pub use spec::BatSpec;
 

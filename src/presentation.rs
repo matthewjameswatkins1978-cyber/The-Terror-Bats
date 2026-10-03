@@ -21,6 +21,7 @@ use sartorial_core::{
     TerminalRenderer, Theme,
 };
 
+use crate::campaign::CampaignReceipt;
 use crate::doctor::DoctorReport;
 use crate::receipt::{Receipt, ReplayReport};
 use crate::runner::{RunStatus, TERRORBAT_VERSION};
@@ -467,6 +468,115 @@ pub fn document_replay(report: &ReplayReport, caps: &Capabilities) -> Document {
             .to_string(),
     });
     doc
+}
+
+/// Project a campaign aggregate into a Sartorial Document. Verdict labels
+/// are rendered verbatim — NOT OBSERVED is never reworded as
+/// PASSED/SAFE/CORRECT. The FIRST PROVEN receipt reference is surfaced so a
+/// falsification finding is one lookup away from its evidence.
+pub fn document_campaign(c: &CampaignReceipt, caps: &Capabilities) -> Document {
+    let mut doc = Document::new();
+    // Sigil band first (case-preserving block), matching the receipt shape.
+    doc = doc.push(Block::Details {
+        text: title_text("BAT CAMPAIGN", caps.width),
+    });
+    doc = doc.push(Block::Title {
+        text: "BAT CAMPAIGN".to_string(),
+        version: None,
+    });
+    doc = doc.push(Block::Subtitle {
+        text: c.pack_id.clone(),
+    });
+    doc = doc.push(Block::Facts {
+        facts: vec![
+            Fact::new("Campaign", c.campaign_id.clone()),
+            Fact::new("Pack", c.pack.clone()),
+            Fact::new("Target commit", short_sha(&c.target_commit)),
+            Fact::new("Requested runs", c.requested_runs.to_string()),
+            Fact::new("Completed runs", c.completed_runs.to_string()),
+            Fact::new("Children", c.children.len().to_string()),
+            Fact::new(
+                "Stopped early",
+                if c.stopped_early { "yes" } else { "no" }.to_string(),
+            ),
+        ],
+    });
+
+    doc = doc.push(Block::BadgeSection {
+        label: "VERDICTS".to_string(),
+        badge: format!("{} children", c.children.len()),
+    });
+    doc = doc.push(Block::Facts {
+        facts: crate::campaign::VERDICT_LABELS
+            .iter()
+            .map(|label| {
+                Fact::new(
+                    (*label).to_string(),
+                    c.summary.get(*label).copied().unwrap_or(0).to_string(),
+                )
+            })
+            .collect(),
+    });
+
+    if let Some(first) = c
+        .children
+        .iter()
+        .find(|ch| ch.verdict == crate::receipt::Verdict::Proven)
+    {
+        doc = doc.push(Block::Facts {
+            facts: vec![
+                Fact::new("First PROVEN receipt", first.receipt_id.clone()),
+                Fact::new("First PROVEN execution", first.execution_id.clone()),
+            ],
+        });
+    }
+
+    let items: Vec<String> = c
+        .children
+        .iter()
+        .map(|ch| {
+            format!(
+                "iteration {} \u{00b7} entry {} \u{00b7} {} \u{00b7} {} \u{00b7} {}",
+                ch.iteration,
+                ch.entry_index,
+                ch.bat_id,
+                ch.verdict.as_str(),
+                ch.receipt_id,
+            )
+        })
+        .collect();
+    if !items.is_empty() {
+        doc = doc.push(Block::List {
+            ordered: false,
+            items,
+        });
+    }
+
+    if c.stopped_early
+        && let Some(reason) = &c.stop_reason
+    {
+        doc = doc.push(Block::Notices {
+            notices: vec![Notice::info(reason.clone())],
+        });
+    }
+
+    doc = doc.push(Block::Details {
+        text: "Every child is an ordinary first-class run; later results never overwrite \
+               earlier ones."
+            .to_string(),
+    });
+    doc = doc.push(Block::Facts {
+        facts: vec![
+            Fact::new("Pack", c.pack.clone()),
+            Fact::new("Campaign", c.campaign_id.clone()),
+        ],
+    });
+    doc
+}
+
+/// Convenience: project and render a campaign for the detected context.
+pub fn render_campaign(c: &CampaignReceipt, caps: &Capabilities) -> String {
+    render_document(&document_campaign(c, caps), caps)
 }
 
 /// Convenience: project and render a receipt for the detected context.

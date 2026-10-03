@@ -19,6 +19,9 @@ pub enum Error {
 
     #[error("receipt integrity failure at `{path}`:\n{message}")]
     Receipt { path: PathBuf, message: String },
+
+    #[error("campaign integrity failure at `{path}`:\n{message}")]
+    Campaign { path: PathBuf, message: String },
 }
 
 impl Error {
@@ -38,6 +41,13 @@ impl Error {
 
     pub fn store(path: &Path, message: impl Into<String>) -> Self {
         Error::Store {
+            path: path.to_path_buf(),
+            message: message.into(),
+        }
+    }
+
+    pub fn campaign(path: &Path, message: impl Into<String>) -> Self {
+        Error::Campaign {
             path: path.to_path_buf(),
             message: message.into(),
         }
