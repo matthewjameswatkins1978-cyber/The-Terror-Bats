@@ -208,6 +208,8 @@ pub struct RunManifest {
     pub receipt_id: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub adapter_bindings_required: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_adapters: Vec<adapter::AdapterProvenance>,
 }
 
 pub struct RunOptions {
@@ -340,6 +342,7 @@ pub fn run_bat_with_adapter_expectations(
     let capabilities = capabilities_record(&spec);
     let mut limitations = base_limitations();
 
+    let resolved_adapter_provenance = std::cell::RefCell::new(Vec::new());
     // Early-exit finaliser: every path through this function leaves a
     // truthful manifest and receipt behind.
     let finish = |run_status: RunStatus,
@@ -388,6 +391,7 @@ pub fn run_bat_with_adapter_expectations(
                 .iter()
                 .chain(&spec.attack.run)
                 .any(|step| !adapter::is_builtin(&step.adapter)),
+            resolved_adapters: resolved_adapter_provenance.borrow().clone(),
         };
         let final_receipt =
             receipt::finalise(receipt::build(&manifest, &claim_text, oracle_block))?;
@@ -503,6 +507,7 @@ pub fn run_bat_with_adapter_expectations(
                 );
             }
         };
+
     for (name, resolved) in &mut resolved_adapters.by_name {
         if !resolved.describe_stderr.is_empty() {
             let reference = store.put(&resolved.describe_stderr)?;
@@ -513,6 +518,11 @@ pub fn run_bat_with_adapter_expectations(
             )?;
         }
     }
+    *resolved_adapter_provenance.borrow_mut() = resolved_adapters
+        .by_name
+        .values()
+        .map(|resolved| resolved.provenance.clone())
+        .collect();
     if let Some(expected) = expected {
         let actual: BTreeMap<String, String> = resolved_adapters
             .by_name
@@ -521,7 +531,7 @@ pub fn run_bat_with_adapter_expectations(
             .collect();
         if expected
             .iter()
-            .any(|(name, id)| actual.get(name) != Some(id))
+            .any(|(name, id)| actual.get(name).is_some_and(|actual| actual != id))
         {
             let message = format!(
                 "adapter description identities changed: expected {expected:?}, received {actual:?}"

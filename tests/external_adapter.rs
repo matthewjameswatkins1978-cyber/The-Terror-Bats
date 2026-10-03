@@ -327,6 +327,204 @@ fn adapter_reported_statuses_and_process_crash_never_falsify_claims() {
     assert!(repo_is_clean(&f.repo));
 }
 
+fn named_campaign_bat(f: &Fx, name: &str, adapter_name: &str) -> PathBuf {
+    let (requires, action, payload) = if adapter_name == "fs" {
+        (
+            "[fs.write, git.inspect]",
+            "write",
+            format!("      path: notes/{name}.txt\n      text: campaign fixture\n"),
+        )
+    } else {
+        ("[process.spawn, git.inspect]", "observe", String::new())
+    };
+    write_spec(
+        &f.specs,
+        name,
+        &format!(
+            "version: terrorbat/v1\nid: {name}\nclaim:\n  text: Adapter provenance remains pinned across this campaign.\nrequires: {requires}\nattack:\n  run:\n    - adapter: {adapter_name}\n      action: {action}\n{payload}oracle:\n  all: []\nevidence:\n  capture: [git_diff]\n"
+        ),
+    )
+}
+
+fn heterogeneous_pack(f: &Fx) -> PathBuf {
+    let entries = [
+        ("first.yaml", "alpha"),
+        ("builtin.yaml", "fs"),
+        ("third.yaml", "beta"),
+        ("again.yaml", "alpha"),
+    ];
+    for (file, adapter_name) in entries {
+        named_campaign_bat(f, file, adapter_name);
+    }
+    let pack = f.specs.join("heterogeneous-pack.yaml");
+    std::fs::write(
+        &pack,
+        "version: terrorbat-pack/v1\nid: heterogeneous\nbats:\n  - path: first.yaml\n  - path: builtin.yaml\n  - path: third.yaml\n  - path: again.yaml\n",
+    )
+    .expect("write heterogeneous pack");
+    pack
+}
+
+fn named_bindings(
+    f: &Fx,
+    alpha_mode: &str,
+    alpha_state: Option<&Path>,
+    beta_mode: &str,
+) -> PathBuf {
+    let alpha_args = match alpha_state {
+        Some(path) => format!("    args: [{alpha_mode}, {}]\n", yaml_path(path)),
+        None => format!("    args: [{alpha_mode}]\n"),
+    };
+    let path = f.specs.join("named-adapters.yaml");
+    std::fs::write(
+        &path,
+        format!(
+            "version: terrorbat-adapters/v1\nadapters:\n  alpha:\n    program: {}\n{alpha_args}  beta:\n    program: {}\n    args: [{beta_mode}]\n",
+            yaml_path(Path::new(FIXTURE)),
+            yaml_path(Path::new(FIXTURE)),
+        ),
+    )
+    .expect("write named adapter bindings");
+    path
+}
+
+#[test]
+fn campaigns_allow_heterogeneous_adapters_and_reject_repeated_name_drift() {
+    let f = fx("adapter-campaign-heterogeneous");
+    let pack = heterogeneous_pack(&f);
+    let opts = CampaignOptions {
+        pack_path: pack,
+        repo: f.repo.clone(),
+        store_root: Some(f.store.clone()),
+        runs: 1,
+        stop_on_proven: false,
+    };
+    let bindings = named_bindings(&f, "alpha", None, "beta");
+    let campaign = campaign::run_campaign_with_adapters(&opts, Some(&bindings))
+        .expect("A -> built-in -> B -> A should succeed");
+    assert_eq!(campaign.campaign.children.len(), 4);
+    let store = EvidenceStore::open(&f.store).expect("store");
+    let built_in = store.run_dir(&campaign.campaign.children[1].execution_id);
+    let built_in_receipt = receipt::load_receipt(&built_in).expect("built-in child receipt");
+    let value = serde_json::to_value(&built_in_receipt).expect("serialise receipt");
+    assert!(!value.as_object().unwrap().contains_key("resolved_adapters"));
+    assert!(
+        !value
+            .as_object()
+            .unwrap()
+            .contains_key("adapter_bindings_required")
+    );
+
+    let drift = fx("adapter-campaign-drift");
+    let pack = heterogeneous_pack(&drift);
+    let opts = CampaignOptions {
+        pack_path: pack,
+        repo: drift.repo.clone(),
+        store_root: Some(drift.store.clone()),
+        runs: 1,
+        stop_on_proven: false,
+    };
+    let state = drift._dir.join("alpha-describe-count");
+    let bindings = named_bindings(&drift, "alpha-drift", Some(&state), "beta");
+    let error = campaign::run_campaign_with_adapters(&opts, Some(&bindings))
+        .expect_err("the repeated alpha description must remain pinned");
+    assert!(
+        error.to_string().contains("description identity changed"),
+        "{error}"
+    );
+    assert!(repo_is_clean(&f.repo));
+    assert!(repo_is_clean(&drift.repo));
+}
+
+#[test]
+fn trusted_campaign_load_rejects_rehashed_conflicting_adapter_receipts() {
+    let f = fx("adapter-campaign-load-conflict");
+    let bat = named_campaign_bat(&f, "alpha.yaml", "alpha");
+    let pack = f.specs.join("pack.yaml");
+    std::fs::write(
+        &pack,
+        "version: terrorbat-pack/v1\nid: alpha\nbats:\n  - path: alpha.yaml\n",
+    )
+    .unwrap();
+    let opts = CampaignOptions {
+        pack_path: pack,
+        repo: f.repo.clone(),
+        store_root: Some(f.store.clone()),
+        runs: 1,
+        stop_on_proven: false,
+    };
+    let binding_v1 = named_bindings(&f, "alpha", None, "beta");
+    let base =
+        campaign::run_campaign_with_adapters(&opts, Some(&binding_v1)).expect("base campaign");
+    let binding_v2 = named_bindings(&f, "alpha-v2", None, "beta");
+    let second = run(&f, &bat, Some(&binding_v2));
+    let live = receipt::load_receipt(&second.run_dir).expect("second receipt is genuine");
+    assert_ne!(
+        base.campaign.children[0].receipt_id, live.receipt_id,
+        "the conflicting child is a separate verified receipt"
+    );
+    let mut forged = base.campaign.clone();
+    forged.children.push(campaign::CampaignChildRecord {
+        iteration: 1,
+        entry_index: 1,
+        bat: live.bat.bat_sha.clone(),
+        bat_id: live.bat.id.clone(),
+        execution_id: live.execution_id.clone(),
+        receipt_id: live.receipt_id.clone(),
+        status: live.execution.status,
+        oracle: live.oracle.result,
+        verdict: live.verdict,
+    });
+    forged.summary = campaign::summarize(&forged.children);
+    let forged = campaign::finalise(forged).expect("rehash aggregate");
+    campaign::write_campaign(&base.campaign_dir, &forged).expect("write rehashed aggregate");
+    let store = EvidenceStore::open(&f.store).expect("store");
+    let error = campaign::load_campaign(&store, &base.campaign_dir)
+        .expect_err("trusted load must recompute adapter consistency");
+    assert!(error.to_string().contains("TB-CAMPAIGN-CORRUPT"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("conflicting description identities"),
+        "{error}"
+    );
+}
+
+#[test]
+fn replay_checks_resolved_adapter_identity_when_external_step_never_executes() {
+    let f = fx("adapter-replay-preflight-only");
+    let bat = write_spec(
+        &f.specs,
+        "preflight-only.yaml",
+        "version: terrorbat/v1\nid: preflight-only\nclaim:\n  text: Resolved adapters remain part of replay identity.\nrequires: [process.spawn, git.inspect]\nattack:\n  setup:\n    - adapter: command\n      action: run\n      program: terrorbat-intentionally-missing-setup-command\n  run:\n    - adapter: fixture\n      action: observe\noracle:\n  all: []\nevidence:\n  capture: [git_diff]\n",
+    );
+    let original = run(&f, &bat, Some(&binding(&f, "")));
+    assert_eq!(original.manifest.run_status, RunStatus::InfrastructureError);
+    assert_eq!(original.receipt.resolved_adapters.len(), 1);
+    assert!(
+        original
+            .receipt
+            .execution
+            .steps
+            .iter()
+            .all(|step| { step.adapter != "fixture" || step.adapter_provenance.is_none() })
+    );
+    let changed = binding(&f, "description-change");
+    let error = receipt::replay_with_adapters(
+        &original.receipt.receipt_id,
+        Some(f.store.clone()),
+        Some(&changed),
+    )
+    .expect_err("preflight-resolved identity drift must refuse replay");
+    assert!(error.to_string().contains("identity mismatch"), "{error}");
+    assert_eq!(
+        common::git(&f.repo, &["worktree", "list", "--porcelain"])
+            .matches("worktree ")
+            .count(),
+        1
+    );
+    assert!(repo_is_clean(&f.repo));
+}
 #[test]
 fn adapter_bindings_reject_unknown_fields_duplicate_names_and_reserved_builtins() {
     let f = fx("adapter-binding-schema");

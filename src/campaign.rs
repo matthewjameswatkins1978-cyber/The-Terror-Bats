@@ -271,6 +271,7 @@ pub fn load_campaign(store: &EvidenceStore, campaign_dir: &Path) -> Result<Campa
     let path = campaign_dir.join("campaign.json");
     let campaign = parse_campaign_unverified(&path)?;
     verify_campaign(&campaign, &path)?;
+    let mut adapter_identities = BTreeMap::new();
     for child in &campaign.children {
         let run_dir = store.run_dir(&child.execution_id);
         if !run_dir.join("manifest.json").exists() {
@@ -296,6 +297,28 @@ pub fn load_campaign(store: &EvidenceStore, campaign_dir: &Path) -> Result<Campa
                 ),
             )
         })?;
+        for provenance in live.resolved_adapters.iter().chain(
+            live.execution
+                .steps
+                .iter()
+                .filter_map(|step| step.adapter_provenance.as_ref()),
+        ) {
+            if adapter_identities
+                .get(&provenance.name)
+                .is_some_and(|identity| identity != &provenance.description_id)
+            {
+                return Err(Error::campaign(
+                    &path,
+                    format!(
+                        "CORRUPT campaign: external adapter `{}` has conflicting description identities across verified child receipts.\n\nCode: TB-CAMPAIGN-CORRUPT",
+                        provenance.name,
+                    ),
+                ));
+            }
+            adapter_identities
+                .entry(provenance.name.clone())
+                .or_insert_with(|| provenance.description_id.clone());
+        }
         if live.receipt_id != child.receipt_id
             || live.execution_id != child.execution_id
             || live.verdict != child.verdict
@@ -588,16 +611,18 @@ fn run_campaign_with_config(
                     "adapter description identity changed during campaign; refusing to write a campaign receipt",
                 ));
             }
-            let child_adapter_ids: BTreeMap<String, String> = receipt
-                .execution
-                .steps
+            let mut child_adapter_ids: BTreeMap<String, String> = receipt
+                .resolved_adapters
                 .iter()
-                .filter_map(|step| {
+                .map(|provenance| (provenance.name.clone(), provenance.description_id.clone()))
+                .collect();
+            if child_adapter_ids.is_empty() {
+                child_adapter_ids.extend(receipt.execution.steps.iter().filter_map(|step| {
                     step.adapter_provenance
                         .as_ref()
                         .map(|p| (p.name.clone(), p.description_id.clone()))
-                })
-                .collect();
+                }));
+            }
             if pinned_adapter_ids.iter().any(|(name, id)| {
                 child_adapter_ids
                     .get(name)

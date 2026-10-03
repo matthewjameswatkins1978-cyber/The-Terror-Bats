@@ -197,6 +197,8 @@ pub struct Receipt {
     pub execution: ExecutionBlock,
     #[serde(default, skip_serializing_if = "is_false")]
     pub adapter_bindings_required: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_adapters: Vec<crate::adapter::AdapterProvenance>,
     pub oracle: OracleBlock,
     pub verdict: Verdict,
     pub verdict_meaning: String,
@@ -323,6 +325,7 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
             steps: manifest.steps.clone(),
         },
         adapter_bindings_required: manifest.adapter_bindings_required,
+        resolved_adapters: manifest.resolved_adapters.clone(),
         oracle,
         verdict,
         verdict_meaning: verdict.meaning().to_string(),
@@ -550,16 +553,20 @@ pub fn replay_with_adapters(
     // Verified load: a tampered receipt can never seed a replay.
     let original = load_receipt(&run_dir)?;
 
-    let expected_adapters: std::collections::BTreeMap<String, String> = original
-        .execution
-        .steps
+    let mut expected_adapters: std::collections::BTreeMap<String, String> = original
+        .resolved_adapters
         .iter()
-        .filter_map(|step| {
+        .map(|adapter| (adapter.name.clone(), adapter.description_id.clone()))
+        .collect();
+    // Receipts predating resolved-adapter provenance can only identify
+    // adapters whose steps executed; retain that backward-compatible floor.
+    if expected_adapters.is_empty() {
+        expected_adapters.extend(original.execution.steps.iter().filter_map(|step| {
             step.adapter_provenance
                 .as_ref()
                 .map(|p| (p.name.clone(), p.description_id.clone()))
-        })
-        .collect();
+        }));
+    }
     if original.adapter_bindings_required && bindings.is_none() {
         return Err(Error::receipt(
             &run_dir,

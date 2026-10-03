@@ -3,7 +3,9 @@ use serde_json::{Value, json};
 use std::io::{self, BufRead};
 
 fn main() {
-    let mode = std::env::args().nth(1).unwrap_or_default();
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let mode = args.first().map(String::as_str).unwrap_or_default();
+    let state_path = args.get(1).map(String::as_str);
     let mut input = String::new();
     io::stdin()
         .lock()
@@ -11,13 +13,13 @@ fn main() {
         .expect("request line");
     let request: Value = serde_json::from_str(&input).expect("request JSON");
     match request["kind"].as_str().unwrap_or("") {
-        "describe" => describe(&mode),
-        "execute" => execute(&mode, &request),
+        "describe" => describe(mode, state_path),
+        "execute" => execute(mode, &request),
         _ => std::process::exit(2),
     }
 }
 
-fn describe(mode: &str) {
+fn describe(mode: &str, state_path: Option<&str>) {
     if mode == "describe-diagnostic" {
         eprintln!("fixture describe diagnostic");
     }
@@ -27,20 +29,29 @@ fn describe(mode: &str) {
     if mode == "describe-crash" {
         std::process::exit(9);
     }
-    let name = if mode == "name-mismatch" {
-        "different-name"
-    } else {
-        "fixture"
+    let name = match mode {
+        "name-mismatch" => "different-name",
+        "alpha" | "alpha-v2" | "alpha-drift" => "alpha",
+        "beta" => "beta",
+        _ => "fixture",
     };
     let protocol = if mode == "version-mismatch" {
         "terrorbat-adapter/v99"
     } else {
         "terrorbat-adapter/v1"
     };
-    let version = if mode == "description-change" {
-        "2.0.0"
-    } else {
-        "1.0.0"
+    let version = match mode {
+        "description-change" | "alpha-v2" => "2.0.0",
+        "alpha-drift" => {
+            let path = state_path.expect("alpha-drift state path");
+            let count = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or_default();
+            std::fs::write(path, (count + 1).to_string()).expect("update describe counter");
+            if count == 0 { "1.0.0" } else { "2.0.0" }
+        }
+        _ => "1.0.0",
     };
     let value = json!({
         "protocol": protocol,
