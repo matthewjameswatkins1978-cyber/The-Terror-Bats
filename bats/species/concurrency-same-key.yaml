@@ -1,0 +1,76 @@
+# Species: concurrency — simultaneous same-key writers.
+#
+# Claim:   when writers contend on one key, the first writer's value
+#          survives (first-write-wins reconciliation).
+# Attack:  two writes to the same worktree-relative key with different
+#          content. Sequential here: the deterministic worst case of the
+#          race, where the loser overwrites the winner (last-write-wins).
+#          A true parallel schedule needs threads the Bat Spec language
+#          deliberately does not provide; the oracle distinction below is
+#          what this species preserves.
+# Oracle:  fires when the loser's bytes are DURABLY present — the file
+#          really contains the second value AND the git diff really shows
+#          it. This separates the two outcomes the Lantern investigation
+#          taught us to distinguish:
+#            durable state correct but abstraction leaked an error
+#              → path_changed does NOT fire → NOT OBSERVED;
+#            durable state itself corrupted (loser overwrote winner)
+#              → both legs fire → PROVEN.
+#          An error return with correct durable state can never forge
+#          PROVEN here: there is no error leg in the oracle.
+#
+# Portable: built-ins only (fs.write + git evidence). No shell, no target
+# language, no Lantern/Threadmoth coupling.
+# Against any clean repository this yields PROVEN with git_diff evidence.
+
+version: terrorbat/v1
+
+id: concurrency-same-key
+
+claim:
+  text: >
+    When writers contend on the same key, reconciliation preserves the
+    first writer's value; no loser's overwrite becomes durable state.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: shared/key.txt
+      text: "writer=first\n"
+    - adapter: fs
+      action: write
+      path: shared/key.txt
+      text: "writer=second\n"
+
+oracle:
+  any:
+    - type: text_contains
+      path: shared/key.txt
+      substring: writer=second
+    - type: path_changed
+      path: shared/key.txt
+    - type: git_diff_contains
+      substring: writer=second
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, concurrency, same-key, last-write-wins]
+  description: >
+    Generic same-key contention specimen. Distinguishes durable-state
+    corruption (PROVEN, diff-backed) from a leaked error over correct
+    state (NOT OBSERVED — no error leg exists to misfire).

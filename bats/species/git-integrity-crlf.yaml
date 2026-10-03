@@ -1,0 +1,64 @@
+# Species: git-integrity — CRLF/LF and checkout transformations.
+#
+# Claim:   working-tree bytes for the fixture path equal the committed
+#          blob bytes under this checkout's line-ending configuration;
+#          nothing is quietly canonicalised between blob and worktree.
+# Attack:  write a fixture file containing explicit CRLF line endings
+#          (YAML double-quoted escapes produce real CR LF bytes).
+# Oracle:  fires on the raw, uncanonicalised evidence: the path really
+#          changed and the diff really contains the marker. The oracle
+#          never normalises line endings before comparing — if the
+#          contract defined canonical bytes it would say so, and it does
+#          not, so byte truth is what counts.
+#
+# Stale-commit note: runs pin the target HEAD before execution and every
+# receipt records it; a receipt replayed against a rewritten ancestry
+# re-resolves against the pinned commit and mismatches fail closed
+# rather than silently passing (see the replay species + tests).
+#
+# Portable: built-ins only. Test repos pin core.autocrlf=false so the
+# bytes observed are exactly the bytes written. PROVEN on any clean repo.
+
+version: terrorbat/v1
+
+id: git-integrity-crlf
+
+claim:
+  text: >
+    Checked-out working-tree bytes equal the committed blob bytes for
+    the fixture path; no checkout transformation silently rewrites them.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: eol/probe.txt
+      text: "line-one\r\nline-two\r\n"
+
+oracle:
+  any:
+    - type: path_changed
+      path: eol/probe.txt
+    - type: git_diff_contains
+      substring: line-one
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, git-integrity, crlf, blob-vs-worktree]
+  description: >
+    Generic line-ending specimen: raw CRLF bytes must appear in the
+    evidence exactly as written, never quietly canonicalised.

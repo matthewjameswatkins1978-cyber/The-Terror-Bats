@@ -1,6 +1,6 @@
 [package]
 name = "terrorbat"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Terror Bat — reproducible falsification experiments with evidence and receipts"
 license = "MIT OR Apache-2.0"

@@ -1,0 +1,65 @@
+# Species: filesystem-boundaries — unicode, normalisation, escape refusal.
+#
+# Claim:   the unicode-named boundary path is never modified.
+# Attack:  write through a unicode boundary name (accented character +
+#          check mark). Relative against the worktree root, no drive
+#          prefix, no UNC, no `..` — a legitimate boundary name, not an
+#          escape attempt.
+# Oracle:  fires on the diff marker (raw bytes, never normalised before
+#          comparison) or the path record. Porcelain may quote non-ASCII
+#          names depending on core.quotepath, so the diff-content leg —
+#          pure ASCII marker — carries the finding deterministically on
+#          every platform; the path leg fires where the platform reports
+#          the name literally.
+#
+# Escape attempts (`../escape.txt`, absolute paths, drive prefixes) are
+# the other half of this family and are tested directly in
+# tests/species.rs: the framework must refuse them with PolicyDenied,
+# whose hard-mapped verdict is INCONCLUSIVE — a refusal says nothing
+# about the claim, which is exactly correct. Refusal is a guard, not a
+# finding, and must never be presentable as PROVEN.
+#
+# Portable: built-ins only. PROVEN on any clean repository.
+
+version: terrorbat/v1
+
+id: filesystem-boundary-unicode
+
+claim:
+  text: >
+    The unicode-named boundary path is never modified.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: "ünicode-✓-boundary.txt"
+      text: "boundary-marker=1\n"
+
+oracle:
+  any:
+    - type: git_diff_contains
+      substring: boundary-marker=1
+    - type: path_changed
+      path: "ünicode-✓-boundary.txt"
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, filesystem-boundaries, unicode, normalisation]
+  description: >
+    Generic boundary specimen: a unicode name must not smuggle a write
+    past detection, and must not be silently normalised before judgement.
