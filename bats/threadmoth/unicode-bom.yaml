@@ -1,0 +1,99 @@
+{
+  "version": "terrorbat/v1",
+  "id": "threadmoth-unicode-bom",
+  "claim": {
+    "text": "A bounded UTF-8 edit preserves Unicode, the BOM and unrelated bytes, with an exact certified post hash."
+  },
+  "requires": [
+    "process.spawn",
+    "fs.write",
+    "git.inspect"
+  ],
+  "attack": {
+    "setup": [
+      {
+        "adapter": "fs",
+        "action": "write",
+        "path": ".hostile-fixtures.py",
+        "from": "../../adapters/threadmoth/fixtures.py"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "prepare",
+          "unicode-bom"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "adapter": "threadmoth",
+        "action": "preview",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/preview.json"
+      },
+      {
+        "adapter": "threadmoth",
+        "action": "mutate",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/result.json"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "check",
+          "unicode-bom"
+        ]
+      }
+    ]
+  },
+  "oracle": {
+    "type": "json_value_equals",
+    "step": "run:2",
+    "pointer": "/violation",
+    "value": true
+  },
+  "evidence": {
+    "capture": [
+      "stdout",
+      "stderr",
+      "git_diff"
+    ]
+  },
+  "timeout": {
+    "setup": "30s",
+    "run": "90s",
+    "total": "120s"
+  },
+  "params": {
+    "python_program": {
+      "type": "string",
+      "default": "python"
+    },
+    "fixture_script": {
+      "type": "string",
+      "default": ".hostile-fixtures.py"
+    }
+  },
+  "meta": {
+    "tags": [
+      "threadmoth",
+      "hostile"
+    ],
+    "origin": "local"
+  }
+}

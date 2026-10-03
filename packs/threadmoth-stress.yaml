@@ -1,0 +1,19 @@
+{
+  "version": "terrorbat-pack/v1",
+  "id": "threadmoth-stress",
+  "description": "Four deterministic attacks for native Campaign --runs 10 (forty ordinary children).",
+  "bats": [
+    {
+      "path": "../bats/threadmoth/stale-preview.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/ambiguous-exact-match.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/transaction-rollback.yaml"
+    },
+    {
+      "path": "../bats/threadmoth/certificate-byte-truth.yaml"
+    }
+  ]
+}
