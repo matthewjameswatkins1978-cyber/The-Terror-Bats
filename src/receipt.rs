@@ -126,6 +126,13 @@ pub fn verdict_for(status: RunStatus, oracle: Option<OracleResult>) -> (Verdict,
                     .to_string(),
             ),
         ),
+        RunStatus::Unsupported => (
+            Verdict::Inconclusive,
+            Some(
+                "UNSUPPORTED: a required platform capability is unavailable; this is not a target finding"
+                    .to_string(),
+            ),
+        ),
         RunStatus::Completed => match oracle {
             Some(OracleResult::Falsified) => (Verdict::Proven, None),
             Some(OracleResult::NotFalsified) => (

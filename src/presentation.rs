@@ -21,6 +21,7 @@ use sartorial_core::{
     TerminalRenderer, Theme,
 };
 
+use crate::adapters::AdapterInfo;
 use crate::campaign::CampaignReceipt;
 use crate::doctor::DoctorReport;
 use crate::receipt::{Receipt, ReplayReport};
@@ -135,6 +136,7 @@ fn execution_face(status: RunStatus) -> Status {
         RunStatus::TimedOut => Status::Attention,
         RunStatus::Crashed => Status::Failed,
         RunStatus::Cancelled => Status::Skipped,
+        RunStatus::Unsupported => Status::Skipped,
         RunStatus::PolicyDenied => Status::Attention,
         RunStatus::Invalid => Status::Failed,
         RunStatus::InfrastructureError => Status::Failed,
@@ -591,6 +593,115 @@ pub fn render_doctor(rep: &DoctorReport, caps: &Capabilities) -> String {
 
 /// Convenience: project and render a replay comparison followed by the new
 /// receipt view (same order the CLI has always printed).
+/// Project the universal adapter catalogue. Agents discover adapters here,
+/// not from prompt folklore: status values are builtin-stable,
+/// builtin-partial, composition, external-protocol, or planned.
+pub fn document_adapters(adapters: &[AdapterInfo], caps: &Capabilities) -> Document {
+    let mut doc = Document::new();
+    doc = doc.push(Block::Details {
+        text: title_text("UNIVERSAL ADAPTERS", caps.width),
+    });
+    doc = doc.push(Block::Title {
+        text: "UNIVERSAL ADAPTERS".to_string(),
+        version: None,
+    });
+    doc = doc.push(Block::Subtitle {
+        text: "Can one of the universal adapters already reach this thing?".to_string(),
+    });
+    for a in adapters {
+        doc = doc.push(Block::Facts {
+            facts: vec![
+                Fact::new("Adapter", format!("{} — {}", a.name, a.title)),
+                Fact::new("Status", a.status.clone()),
+                Fact::new("Description", a.description.clone()),
+            ],
+        });
+        let ops: Vec<String> = a
+            .operations
+            .iter()
+            .map(|o| {
+                format!(
+                    "{}.{} — {} (requires {})",
+                    a.name, o.action, o.description, o.capability
+                )
+            })
+            .collect();
+        if !ops.is_empty() {
+            doc = doc.push(Block::List {
+                ordered: false,
+                items: ops,
+            });
+        }
+    }
+    doc
+}
+
+/// Project one adapter's full detail: operations, inputs, outputs,
+/// capabilities, constraints, examples, and platform limitations.
+pub fn document_adapter_inspect(a: &AdapterInfo, caps: &Capabilities) -> Document {
+    let mut doc = Document::new();
+    doc = doc.push(Block::Details {
+        text: title_text("ADAPTER", caps.width),
+    });
+    doc = doc.push(Block::Title {
+        text: "ADAPTER".to_string(),
+        version: None,
+    });
+    doc = doc.push(Block::Subtitle {
+        text: format!("{} — {}", a.name, a.title),
+    });
+    doc = doc.push(Block::Facts {
+        facts: vec![
+            Fact::new("Status", a.status.clone()),
+            Fact::new("Description", a.description.clone()),
+        ],
+    });
+    for o in &a.operations {
+        doc = doc.push(Block::Facts {
+            facts: vec![
+                Fact::new("Operation", format!("{}.{}", a.name, o.action)),
+                Fact::new("Description", o.description.clone()),
+                Fact::new("Inputs", o.inputs.join("; ")),
+                Fact::new("Outputs", o.outputs.join("; ")),
+                Fact::new("Requires", o.capability.clone()),
+                Fact::new("Example", o.example.clone()),
+            ],
+        });
+    }
+    doc = doc.push(Block::Facts {
+        facts: vec![
+            Fact::new("Capabilities", a.capabilities.join(", ")),
+            Fact::new("Constraints", a.constraints.join(" ")),
+        ],
+    });
+    if !a.examples.is_empty() {
+        doc = doc.push(Block::List {
+            ordered: false,
+            items: a.examples.clone(),
+        });
+    }
+    if !a.platform_notes.is_empty() {
+        doc = doc.push(Block::Notices {
+            notices: a
+                .platform_notes
+                .iter()
+                .map(|n| Notice::info(n.clone()))
+                .collect(),
+        });
+    }
+    doc
+}
+
+/// Convenience: project and render the adapter catalogue.
+pub fn render_adapters(adapters: &[AdapterInfo], caps: &Capabilities) -> String {
+    render_document(&document_adapters(adapters, caps), caps)
+}
+
+/// Convenience: project and render one adapter's detail.
+pub fn render_adapter_inspect(a: &AdapterInfo, caps: &Capabilities) -> String {
+    render_document(&document_adapter_inspect(a, caps), caps)
+}
+
 pub fn render_replay(
     report: &crate::receipt::ReplayReport,
     new_receipt: &Receipt,
