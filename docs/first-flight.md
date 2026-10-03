@@ -197,6 +197,20 @@ The receipt remains authoritative; the exit code is a summary.
 - `bats/false-success.yaml` — green-looking output contradicted by diff evidence (Windows/cmd, explicit)
 - `bats/example.yaml` — the dependency-shadow identity example (M1 docs)
 
+## Packs and campaigns (W2)
+
+First Flight is complete: the Bats above run, the self-attack passes, and receipts verify. The in-repo self-attack is explicitly **self-attack lite** — a fixed demonstrator over known Bats, not an open-ended assault on Terror Bat itself (that remains M10).
+
+W2 adds repeated falsification on top of the same machinery. A **pack** names an ordered list of Bats (paths resolve relative to the pack file); a **campaign** runs a pack N times serially, each child a first-class ordinary run with its own receipt:
+
+```powershell
+terrorbat pack check packs\first-flight.yaml
+terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --runs 2
+terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
+```
+
+A retry re-runs *until something works*; a campaign re-runs *to see what holds* — later results never overwrite earlier ones, and `stop-on-proven` halts only after a durably persisted PROVEN receipt. Campaign receipts (`campaign:sha256:…`) reference child receipts without copying evidence. The shipped `packs\first-flight.yaml` is a demonstrator only and carries no assurance-profile claims. Full evidence reuse/caching (Constitution 13) and the external adapter protocol come later; W2 deliberately adds neither.
+
 ## Known limitations (First Flight)
 
 - Worktree mode is not hostile-code containment (see above); run only Bats

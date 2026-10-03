@@ -1,0 +1,28 @@
+# Terror Bat First Flight pack (W2 demonstrator)
+#
+# Runs the three built-in Bats that need zero pack params against any clean
+# target repository. Demonstrator only: this pack carries no
+# assurance-profile claims — each child receipt speaks for itself.
+#
+# Excluded deliberately:
+# - bats/orphan-process.yaml needs a machine-specific absolute binary path
+#   (--param probe_program=<path>\target\debug\tb_probe_tree.exe).
+# - bats/example.yaml needs a target-local dependency-shadow fixture.
+#
+# Validate: terrorbat pack check packs/first-flight.yaml
+# Identify: terrorbat pack id packs/first-flight.yaml
+# Campaign: terrorbat pack run packs/first-flight.yaml --repo <clean-repo>
+
+version: terrorbat-pack/v1
+
+id: first-flight
+
+description: >
+  First Flight demonstrator: the verifier-exit check, the
+  protected-path detection self-check, and the false-success
+  contradiction, in pack order.
+
+bats:
+  - path: ../bats/command-exit.yaml
+  - path: ../bats/unexpected-change.yaml
+  - path: ../bats/false-success.yaml
