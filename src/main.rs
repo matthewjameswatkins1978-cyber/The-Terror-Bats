@@ -38,6 +38,9 @@ enum Command {
         /// Path to the target repository (must be clean).
         #[arg(long)]
         repo: PathBuf,
+        /// Explicit local adapter bindings for external Bat steps.
+        #[arg(long)]
+        adapters: Option<PathBuf>,
         /// Parameter override as `name=value` (repeatable).
         #[arg(long = "param", value_name = "NAME=VALUE")]
         param: Vec<String>,
@@ -71,6 +74,9 @@ enum Command {
         /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
         #[arg(long)]
         store: Option<PathBuf>,
+        /// Explicit external adapter bindings required by external-adapter receipts.
+        #[arg(long)]
+        adapters: Option<PathBuf>,
         /// Machine-readable comparison output.
         #[arg(long)]
         json: bool,
@@ -121,6 +127,9 @@ enum PackCommand {
         /// the whole campaign).
         #[arg(long)]
         repo: PathBuf,
+        /// Explicit local external adapter bindings used by all child runs.
+        #[arg(long)]
+        adapters: Option<PathBuf>,
         /// Iterations over the pack entries (positive bounded integer).
         #[arg(long, default_value_t = 1)]
         runs: u64,
@@ -260,6 +269,7 @@ fn run() -> Result<u8, String> {
                 runs,
                 stop_on_proven,
                 store,
+                adapters,
                 json,
             } => {
                 let opts = terrorbat::campaign::CampaignOptions {
@@ -269,7 +279,9 @@ fn run() -> Result<u8, String> {
                     runs,
                     stop_on_proven,
                 };
-                let out = terrorbat::campaign::run_campaign(&opts).map_err(|e| e.to_string())?;
+                let out =
+                    terrorbat::campaign::run_campaign_with_adapters(&opts, adapters.as_deref())
+                        .map_err(|e| e.to_string())?;
                 if json {
                     let text =
                         serde_json::to_string_pretty(&out.campaign).map_err(|e| e.to_string())?;
@@ -287,17 +299,21 @@ fn run() -> Result<u8, String> {
         Command::Run {
             bat,
             repo,
+            adapters,
             param,
             store,
             json,
         } => {
+            let bindings = terrorbat::adapter::load_bindings(adapters.as_deref())
+                .map_err(|e| e.to_string())?;
             let opts = terrorbat::runner::RunOptions {
                 bat_path: bat,
                 repo,
                 store_root: store,
                 overrides: param,
             };
-            let out = terrorbat::runner::run_bat(&opts).map_err(|e| e.to_string())?;
+            let out = terrorbat::runner::run_bat_with_adapters(&opts, bindings.as_ref())
+                .map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&out.receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
@@ -366,9 +382,15 @@ fn run() -> Result<u8, String> {
                 Ok(0)
             }
         },
-        Command::Replay { id, store, json } => {
+        Command::Replay {
+            id,
+            store,
+            adapters,
+            json,
+        } => {
             let (report, out) =
-                terrorbat::receipt::replay(&id, store).map_err(|e| e.to_string())?;
+                terrorbat::receipt::replay_with_adapters(&id, store, adapters.as_deref())
+                    .map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
                 println!("{text}");

@@ -27,7 +27,7 @@ use crate::evidence::{EvidenceRef, EvidenceStore, sha256_hex};
 use crate::oracle::{ConditionOutcome, OracleResult};
 use crate::runner::{
     BatBlock, CapabilitiesRecord, Captures, CleanupRecord, EnvironmentRecord, RunManifest,
-    RunOptions, RunOutput, RunStatus, StepRecord, TargetRecord, run_bat,
+    RunOptions, RunOutput, RunStatus, StepRecord, TargetRecord,
 };
 
 pub const RECEIPT_VERSION: &str = "terrorbat/receipt/v0";
@@ -195,6 +195,10 @@ pub struct Receipt {
     pub claim_text: String,
     pub target: TargetRecord,
     pub execution: ExecutionBlock,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub adapter_bindings_required: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_adapters: Vec<crate::adapter::AdapterProvenance>,
     pub oracle: OracleBlock,
     pub verdict: Verdict,
     pub verdict_meaning: String,
@@ -205,6 +209,10 @@ pub struct Receipt {
     pub cleanup: CleanupRecord,
     pub limitations: Vec<String>,
     pub reproduction: ReproductionBlock,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn isolation_block() -> IsolationBlock {
@@ -267,6 +275,40 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
                 truncated: step.stderr_truncated,
             });
         }
+        if let Some(r) = &step.protocol_stdout {
+            evidence.push(EvidenceItem {
+                kind: format!(
+                    "{}.{}:{}:protocol_stdout",
+                    step.phase, step.adapter, step.index
+                ),
+                reference: r.clone(),
+                truncated: false,
+            });
+        }
+        if let Some(r) = &step.protocol_stderr {
+            evidence.push(EvidenceItem {
+                kind: format!(
+                    "{}.{}:{}:protocol_stderr",
+                    step.phase, step.adapter, step.index
+                ),
+                reference: r.clone(),
+                truncated: false,
+            });
+        }
+        if let Some(r) = step
+            .adapter_provenance
+            .as_ref()
+            .and_then(|p| p.describe_stderr.as_ref())
+        {
+            evidence.push(EvidenceItem {
+                kind: format!(
+                    "{}.{}:{}:describe_stderr",
+                    step.phase, step.adapter, step.index
+                ),
+                reference: r.clone(),
+                truncated: false,
+            });
+        }
     }
     Receipt {
         version: RECEIPT_VERSION.to_string(),
@@ -282,6 +324,8 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
             wall_ms: manifest.wall_ms,
             steps: manifest.steps.clone(),
         },
+        adapter_bindings_required: manifest.adapter_bindings_required,
+        resolved_adapters: manifest.resolved_adapters.clone(),
         oracle,
         verdict,
         verdict_meaning: verdict.meaning().to_string(),
@@ -318,9 +362,23 @@ pub fn compute_id(receipt: &Receipt) -> Result<String> {
 }
 
 /// Finish a receipt: compute its id and fill the replay command.
+fn replay_command(receipt: &Receipt, id: &str) -> String {
+    let has_external = receipt.adapter_bindings_required
+        || receipt
+            .execution
+            .steps
+            .iter()
+            .any(|step| step.adapter_provenance.is_some());
+    if has_external {
+        format!("terrorbat replay {id} --adapters adapters.yaml")
+    } else {
+        format!("terrorbat replay {id}")
+    }
+}
+
 pub fn finalise(mut receipt: Receipt) -> Result<Receipt> {
     let id = compute_id(&receipt)?;
-    receipt.reproduction.replay_command = format!("terrorbat replay {id}");
+    receipt.reproduction.replay_command = replay_command(&receipt, &id);
     receipt.receipt_id = id;
     Ok(receipt)
 }
@@ -388,7 +446,7 @@ fn verify_receipt(receipt: &Receipt, path: &Path) -> Result<()> {
     // `replay_command` is deliberately excluded from the content hash, so it
     // cannot be trusted from the file: a tampered replay command must not
     // become a trusted executable instruction. It must equal its derivation.
-    let expected = format!("terrorbat replay {}", receipt.receipt_id);
+    let expected = replay_command(receipt, &receipt.receipt_id);
     if receipt.reproduction.replay_command != expected {
         return Err(Error::receipt(
             path,
@@ -468,6 +526,16 @@ pub struct ReplayReport {
 /// never modified. The base commit must still exist locally; replay never
 /// fetches from the network.
 pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, RunOutput)> {
+    replay_with_adapters(id, store_root, None)
+}
+
+pub fn replay_with_adapters(
+    id: &str,
+    store_root: Option<PathBuf>,
+    bindings_path: Option<&Path>,
+) -> Result<(ReplayReport, RunOutput)> {
+    let bindings = crate::adapter::load_bindings(bindings_path)
+        .map_err(|e| Error::spec(bindings_path.unwrap_or(Path::new("<adapters>")), e))?;
     let store_root = match store_root {
         Some(p) => p,
         None => EvidenceStore::default_root()?,
@@ -485,6 +553,26 @@ pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, Ru
     // Verified load: a tampered receipt can never seed a replay.
     let original = load_receipt(&run_dir)?;
 
+    let mut expected_adapters: std::collections::BTreeMap<String, String> = original
+        .resolved_adapters
+        .iter()
+        .map(|adapter| (adapter.name.clone(), adapter.description_id.clone()))
+        .collect();
+    // Receipts predating resolved-adapter provenance can only identify
+    // adapters whose steps executed; retain that backward-compatible floor.
+    if expected_adapters.is_empty() {
+        expected_adapters.extend(original.execution.steps.iter().filter_map(|step| {
+            step.adapter_provenance
+                .as_ref()
+                .map(|p| (p.name.clone(), p.description_id.clone()))
+        }));
+    }
+    if original.adapter_bindings_required && bindings.is_none() {
+        return Err(Error::receipt(
+            &run_dir,
+            "external-adapter replay requires explicit `--adapters <file>` bindings",
+        ));
+    }
     // Recover the Bat source: prefer the original file when it still exists
     // and still hashes to the recorded spec source (fixture fidelity for
     // `from:` references); otherwise materialise the stored bytes.
@@ -558,7 +646,22 @@ pub fn replay(id: &str, store_root: Option<PathBuf>) -> Result<(ReplayReport, Ru
         store_root: Some(store_root),
         overrides: original.bat.param_overrides.clone(),
     };
-    let new_out = run_bat(&opts)?;
+    let new_out = crate::runner::run_bat_with_adapter_expectations(
+        &opts,
+        bindings.as_ref(),
+        (!expected_adapters.is_empty()).then_some(&expected_adapters),
+    )?;
+    if new_out
+        .manifest
+        .limitations
+        .iter()
+        .any(|note| note.starts_with("adapter description identities changed:"))
+    {
+        return Err(Error::receipt(
+            &new_out.run_dir,
+            "adapter description identity mismatch; refusing replay",
+        ));
+    }
     let new_receipt = load_receipt(&new_out.run_dir)?;
 
     let report = compare(&original, &new_receipt, notes);

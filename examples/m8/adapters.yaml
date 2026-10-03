@@ -1,0 +1,4 @@
+version: terrorbat-adapters/v1
+adapters:
+  fixture:
+    program: ../../target/debug/tb_adapter_fixture.exe
