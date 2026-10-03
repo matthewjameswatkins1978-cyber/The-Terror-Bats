@@ -1,0 +1,24 @@
+version: terrorbat/v1
+id: lantern-bridge-repeated-cycle-idempotency
+claim:
+  text: Restarted real bridge cycles without new inbox commits produce no duplicate mutation and coherent receipts status.
+requires: [process.spawn, fs.read, fs.write, git.inspect, network]
+attack:
+  run:
+    - adapter: lantern
+      action: bridge_contract
+      scenario: restarted_cycles
+oracle:
+  any:
+    - type: json_value_equals
+      step: run:0
+      pointer: /checks/repeated_cycle_violation
+      value: true
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  setup: 10s
+  run: 120s
+  total: 150s
+meta:
+  tags: [lantern, hostile, deterministic]
