@@ -1,0 +1,111 @@
+{
+  "version": "terrorbat/v1",
+  "id": "threadmoth-unknown-fields-strictness",
+  "claim": {
+    "text": "Unknown request fields at root, operation and budget depths refuse before any mutation."
+  },
+  "requires": [
+    "process.spawn",
+    "fs.write",
+    "git.inspect"
+  ],
+  "attack": {
+    "setup": [
+      {
+        "adapter": "fs",
+        "action": "write",
+        "path": ".hostile-fixtures.py",
+        "from": "../../adapters/threadmoth/fixtures.py"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "prepare",
+          "unknown-fields-strictness"
+        ]
+      }
+    ],
+    "run": [
+      {
+        "adapter": "threadmoth",
+        "action": "preview",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/preview.json"
+      },
+      {
+        "adapter": "threadmoth",
+        "action": "mutate",
+        "request_path": ".hostile/request.json",
+        "output_path": ".hostile/result.json"
+      },
+      {
+        "adapter": "threadmoth",
+        "action": "mutate",
+        "request_path": ".hostile/request2.json",
+        "output_path": ".hostile/result2.json"
+      },
+      {
+        "adapter": "threadmoth",
+        "action": "mutate",
+        "request_path": ".hostile/request3.json",
+        "output_path": ".hostile/result3.json"
+      },
+      {
+        "adapter": "command",
+        "action": "run",
+        "program": {
+          "$param": "python_program"
+        },
+        "args": [
+          {
+            "$param": "fixture_script"
+          },
+          "check",
+          "unknown-fields-strictness"
+        ]
+      }
+    ]
+  },
+  "oracle": {
+    "type": "json_value_equals",
+    "step": "run:4",
+    "pointer": "/violation",
+    "value": true
+  },
+  "evidence": {
+    "capture": [
+      "stdout",
+      "stderr",
+      "git_diff"
+    ]
+  },
+  "timeout": {
+    "setup": "30s",
+    "run": "90s",
+    "total": "120s"
+  },
+  "params": {
+    "python_program": {
+      "type": "string",
+      "default": "python"
+    },
+    "fixture_script": {
+      "type": "string",
+      "default": ".hostile-fixtures.py"
+    }
+  },
+  "meta": {
+    "tags": [
+      "threadmoth",
+      "hostile"
+    ],
+    "origin": "local"
+  }
+}
