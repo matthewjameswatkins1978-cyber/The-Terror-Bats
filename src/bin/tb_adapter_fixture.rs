@@ -143,5 +143,20 @@ fn execute(mode_arg: &str, request: &Value) {
         "stdout": stdout,
         "stderr": stderr
     });
+    if mode == "valid-stdout-overflow" {
+        let mut bytes = serde_json::to_vec(&result).expect("serialize response");
+        bytes.pop().expect("JSON object ends with a brace");
+        let capture_limit = 1_048_576usize;
+        assert!(bytes.len() + 2 < capture_limit);
+        let padding = capture_limit - bytes.len() - 2;
+        bytes.extend(std::iter::repeat_n(b' ', padding));
+        bytes.extend_from_slice(b"}\n");
+        bytes.extend_from_slice(&[b'x'; 37]);
+        io::stdout()
+            .lock()
+            .write_all(&bytes)
+            .expect("write valid overflow");
+        return;
+    }
     println!("{result}");
 }

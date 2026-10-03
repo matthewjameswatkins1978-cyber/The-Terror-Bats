@@ -135,6 +135,51 @@ fn protocol_stdout_overflow_retains_honest_evidence() {
 fn protocol_stderr_overflow_retains_honest_evidence() {
     assert_protocol_overflow("stderr-overflow", "stderr", b'y');
 }
+
+#[test]
+fn truncated_protocol_stdout_retains_raw_evidence_and_fails_closed() {
+    let f = fx("protocol-success-overflow");
+    let b = bat(
+        &f,
+        "success-overflow.yaml",
+        "observe",
+        "valid-stdout-overflow",
+        QUIET,
+        "timeout:\n  run: 10s\n",
+    );
+    let bind = binding(&f, "");
+    let out = run(&f, &b, Some(&bind));
+    assert_eq!(out.manifest.run_status, RunStatus::InfrastructureError);
+    let step = &out.manifest.steps[0];
+    assert_eq!(step.protocol_stdout_total_bytes, 1_048_576 + 37);
+    assert!(step.protocol_stdout_truncated);
+    let reference = step
+        .protocol_stdout
+        .as_ref()
+        .expect("raw protocol stdout retained");
+    let store = EvidenceStore::open(&f.store).expect("evidence store");
+    let raw = store
+        .get(reference)
+        .expect("retained protocol bytes readable");
+    assert_eq!(raw.len(), 1_048_576);
+    assert_eq!(raw.last(), Some(&b'\n'));
+    let evidence = out
+        .receipt
+        .evidence
+        .iter()
+        .find(|item| item.kind.ends_with(":protocol_stdout"))
+        .expect("protocol stdout evidence exists");
+    assert!(evidence.truncated);
+    assert_eq!(&evidence.reference, reference);
+    assert!(
+        out.receipt
+            .limitations
+            .iter()
+            .any(|note| note
+                .contains("protocol stdout truncated: 1048576 of 1048613 bytes retained"))
+    );
+    assert!(repo_is_clean(&f.repo));
+}
 #[test]
 fn replay_requires_explicit_bindings_and_rejects_description_mismatch() {
     let f = fx("adapter-replay");
