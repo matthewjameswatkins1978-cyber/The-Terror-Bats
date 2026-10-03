@@ -34,7 +34,7 @@ def execute(args, request):
         if mode not in {"race","sequential","different"} or type(writers) is not int or not 1<=writers<=32: raise ValueError("invalid bounded ledger payload")
         env=os.environ.copy();env.update(TB_LANTERN_SCENARIO=mode,TB_LANTERN_WRITERS=str(writers))
         binary=Path(args.ledger_binary)
-        result=subprocess.run([str(binary),"--exact","emit_history","--nocapture","--test-threads=1"],cwd=target,env=env,capture_output=True,timeout=100)
+        result=subprocess.run([str(binary),"--exact","emit_history","--ignored","--nocapture","--test-threads=1"],cwd=target,env=env,capture_output=True,timeout=100)
         output=result.stdout.decode("utf-8","replace");diagnostics=result.stderr.decode("utf-8","replace")
         if result.returncode!=0: raise RuntimeError(f"ledger fixture did not complete: {output}\n{diagnostics}")
         lines=[line.split("TB_HISTORY=",1)[1] for line in output.splitlines() if "TB_HISTORY=" in line]
