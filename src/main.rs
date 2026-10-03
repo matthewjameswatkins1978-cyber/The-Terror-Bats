@@ -81,11 +81,35 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// List universal adapters and their implementation status.
+    Adapters {
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Inspect one universal adapter's operations and platform limits.
+    Adapter {
+        #[command(subcommand)]
+        command: AdapterCommand,
+    },
     /// Check platform readiness (Git, store, worktrees, supervision).
     Doctor {
         /// Evidence store root (default: %LOCALAPPDATA%\TerrorBat).
         #[arg(long)]
         store: Option<PathBuf>,
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdapterCommand {
+    /// Show one adapter's operations, inputs, outputs, constraints,
+    /// examples, and platform limitations.
+    Inspect {
+        /// Adapter name (see `terrorbat adapters`).
+        name: String,
         /// Machine-readable output.
         #[arg(long)]
         json: bool,
@@ -406,6 +430,38 @@ fn run() -> Result<u8, String> {
                 Some(out.receipt.verdict.as_str()),
             ))
         }
+        Command::Adapters { json } => {
+            let adapters = terrorbat::adapters::all();
+            if json {
+                let text = serde_json::to_string_pretty(&adapters).map_err(|e| e.to_string())?;
+                println!("{text}");
+            } else {
+                let caps = terrorbat::presentation::detect_capabilities();
+                println!(
+                    "{}",
+                    terrorbat::presentation::render_adapters(&adapters, &caps)
+                );
+            }
+            Ok(0)
+        }
+        Command::Adapter { command } => match command {
+            AdapterCommand::Inspect { name, json } => {
+                let info = terrorbat::adapters::find(&name).ok_or_else(|| {
+                    format!("unknown adapter `{name}` (see `terrorbat adapters`)")
+                })?;
+                if json {
+                    let text = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
+                    println!("{text}");
+                } else {
+                    let caps = terrorbat::presentation::detect_capabilities();
+                    println!(
+                        "{}",
+                        terrorbat::presentation::render_adapter_inspect(&info, &caps)
+                    );
+                }
+                Ok(0)
+            }
+        },
         Command::Doctor { store, json } => {
             let report = terrorbat::doctor::run_doctor(store);
             if json {

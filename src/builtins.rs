@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -48,6 +49,11 @@ pub fn required_capability(adapter: &str, action: &str) -> Option<&'static str> 
         ("command", "run") => Some("process.spawn"),
         ("fs", "write") => Some("fs.write"),
         ("fs", "mkdir") => Some("fs.write"),
+        ("fs", "remove") => Some("fs.write"),
+        ("fs", "read") => Some("fs.read"),
+        ("fs", "list") => Some("fs.read"),
+        ("fs", "stat") => Some("fs.read"),
+        ("fs", "digest") => Some("fs.read"),
         ("git", "status") => Some("git.inspect"),
         ("git", "diff") => Some("git.inspect"),
         ("git", "rev_parse") => Some("git.inspect"),
@@ -216,6 +222,11 @@ pub fn dispatch(
         ("command", "run") => command_run(payload, ctx),
         ("fs", "write") => fs_write(payload, ctx),
         ("fs", "mkdir") => fs_mkdir(payload, ctx),
+        ("fs", "read") => fs_read(payload, ctx),
+        ("fs", "list") => fs_list(payload, ctx),
+        ("fs", "stat") => fs_stat(payload, ctx),
+        ("fs", "digest") => fs_digest(payload, ctx),
+        ("fs", "remove") => fs_remove(payload, ctx),
         ("git", "status") => git_capture(ctx, &["status", "--porcelain"]),
         ("git", "diff") => git_capture(ctx, &["diff", "HEAD"]),
         ("git", "rev_parse") => git_rev_parse(payload, ctx),
@@ -335,6 +346,279 @@ fn fs_mkdir(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<
             target.display()
         ))
     })?;
+    Ok(StepOutcome {
+        status: ExecutionStatus::Completed,
+        exit_code: Some(0),
+        signal: None,
+        stdout: Vec::new(),
+        stdout_total: 0,
+        stderr: Vec::new(),
+        stderr_total: 0,
+        wall_time: start.elapsed(),
+        error: None,
+    })
+}
+
+/// Retained-bytes cap for filesystem reads and digests: totals are always
+/// honest, only retention is bounded (same 1 MiB policy as M2 captures).
+const FS_RETAIN_LIMIT: usize = 1_048_576;
+
+fn retained(bytes: Vec<u8>) -> (Vec<u8>, u64) {
+    let total = bytes.len() as u64;
+    if bytes.len() > FS_RETAIN_LIMIT {
+        (bytes[..FS_RETAIN_LIMIT].to_vec(), total)
+    } else {
+        (bytes, total)
+    }
+}
+
+fn ok_stdout(full: Vec<u8>, wall_time: std::time::Duration) -> StepOutcome {
+    let (stdout, total) = retained(full);
+    ok_stdout_retained(stdout, total, wall_time)
+}
+
+fn ok_stdout_retained(stdout: Vec<u8>, total: u64, wall_time: std::time::Duration) -> StepOutcome {
+    StepOutcome {
+        status: ExecutionStatus::Completed,
+        exit_code: Some(0),
+        signal: None,
+        stdout,
+        stdout_total: total,
+        stderr: Vec::new(),
+        stderr_total: 0,
+        wall_time,
+        error: None,
+    }
+}
+
+/// `fs.read`: stream a worktree-relative file into step stdout, byte-preserving.
+/// Large files keep honest totals with bounded retention. A missing file is an
+/// infrastructure error; the oracle then yields Undetermined, never a finding.
+fn read_bounded(path: &Path) -> StepResult<(Vec<u8>, u64)> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| StepError::Io(format!("cannot read `{}`: {e}", path.display())))?;
+    let mut retained = Vec::with_capacity(FS_RETAIN_LIMIT);
+    let mut total = 0u64;
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|e| StepError::Io(format!("cannot read `{}`: {e}", path.display())))?;
+        if count == 0 {
+            break;
+        }
+        total = total.saturating_add(count as u64);
+        let keep = (FS_RETAIN_LIMIT - retained.len()).min(count);
+        retained.extend_from_slice(&buffer[..keep]);
+    }
+    Ok((retained, total))
+}
+
+fn fs_read(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.read requires a string `path`"))?;
+    let target = resolve_in_worktree(ctx.worktree, &rel)?;
+    let start = std::time::Instant::now();
+    let (bytes, total) = read_bounded(&target)?;
+    Ok(ok_stdout_retained(bytes, total, start.elapsed()))
+}
+
+/// `fs.list`: sorted directory listing on stdout, one entry per line —
+/// directories suffixed with `/`, symlinks with `@` (never followed).
+/// `.` lists the worktree root itself.
+fn fs_list(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.list requires a string `path`"))?;
+    let target = if rel == "." || rel == "./" || rel.is_empty() {
+        ctx.worktree.to_path_buf()
+    } else {
+        resolve_in_worktree(ctx.worktree, &rel)?
+    };
+    let start = std::time::Instant::now();
+    let meta = std::fs::symlink_metadata(&target)
+        .map_err(|e| StepError::Io(format!("cannot list `{rel}`: {e}")))?;
+    if meta.file_type().is_symlink() {
+        return Err(malformed("fs.list does not follow symlinks"));
+    }
+    if !meta.is_dir() {
+        return Err(malformed(format!(
+            "fs.list target `{rel}` is not a directory"
+        )));
+    }
+    let entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&target)
+        .map_err(|e| StepError::Io(format!("cannot list `{rel}`: {e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| StepError::Io(format!("cannot list `{rel}`: {e}")))?;
+    let mut names: Vec<String> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let ft = entry
+            .file_type()
+            .map_err(|e| StepError::Io(format!("cannot stat `{rel}/{name}`: {e}")))?;
+        if ft.is_dir() {
+            names.push(format!("{name}/"));
+        } else if ft.is_symlink() {
+            names.push(format!("{name}@"));
+        } else {
+            names.push(name);
+        }
+    }
+    names.sort();
+    let text = if names.is_empty() {
+        String::new()
+    } else {
+        names.join("\n") + "\n"
+    };
+    Ok(ok_stdout(text.into_bytes(), start.elapsed()))
+}
+
+/// `fs.stat`: JSON metadata on stdout (`path`, `kind`, `size`, `sha256`).
+/// Missing files report `kind: "missing"` as data (Completed) — the adapter
+/// reports reality, the oracle decides what it means.
+fn fs_stat(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.stat requires a string `path`"))?;
+    let target = resolve_in_worktree(ctx.worktree, &rel)?;
+    let start = std::time::Instant::now();
+    let norm = rel.replace('\\', "/");
+    let body = match std::fs::symlink_metadata(&target) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            serde_json::json!({"path": norm, "kind": "missing", "size": null, "sha256": null})
+        }
+        Err(error) => {
+            return Err(StepError::Io(format!(
+                "cannot stat `{}`: {error}",
+                target.display()
+            )));
+        }
+        Ok(m) => {
+            let ft = m.file_type();
+            if ft.is_symlink() {
+                let link = std::fs::read_link(&target).map_err(|e| {
+                    StepError::Io(format!("cannot read link `{}`: {e}", target.display()))
+                })?;
+                serde_json::json!({"path": norm, "kind": "symlink", "size": null, "sha256": null, "target": link.to_string_lossy()})
+            } else if ft.is_dir() {
+                serde_json::json!({"path": norm, "kind": "dir", "size": null, "sha256": null})
+            } else if ft.is_file() {
+                let bytes = std::fs::read(&target).map_err(|e| {
+                    StepError::Io(format!("cannot read `{}`: {e}", target.display()))
+                })?;
+                serde_json::json!({"path": norm, "kind": "file", "size": bytes.len(), "sha256": crate::evidence::sha256_hex(&bytes)})
+            } else {
+                serde_json::json!({"path": norm, "kind": "other", "size": null, "sha256": null})
+            }
+        }
+    };
+    let bytes = serde_json::to_vec(&body)
+        .map_err(|e| StepError::Io(format!("cannot encode stat JSON: {e}")))?;
+    Ok(ok_stdout(bytes, start.elapsed()))
+}
+
+/// `fs.digest`: canonical digest of a worktree-relative tree — sorted
+/// `sha256  rel` lines for files, `dir  rel/` markers, `symlink  rel -> target`
+/// records. `.` digests the whole worktree. The before/after snapshot primitive:
+/// capture in setup, capture after run, compare with path_changed/text conditions.
+fn fs_digest(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.digest requires a string `path`"))?;
+    let (target, base_rel) = if rel == "." || rel == "./" || rel.is_empty() {
+        (ctx.worktree.to_path_buf(), String::new())
+    } else {
+        let t = resolve_in_worktree(ctx.worktree, &rel)?;
+        (t, rel.replace('\\', "/"))
+    };
+    let start = std::time::Instant::now();
+    let io = |what: &str, e: std::io::Error| StepError::Io(format!("cannot digest `{what}`: {e}"));
+    let meta = std::fs::symlink_metadata(&target).map_err(|e| io(&rel, e))?;
+    let mut lines: Vec<String> = Vec::new();
+    if meta.file_type().is_symlink() {
+        let link = std::fs::read_link(&target).map_err(|e| io(&rel, e))?;
+        lines.push(format!("symlink  {base_rel} -> {}", link.to_string_lossy()));
+    } else if meta.is_file() {
+        let bytes = std::fs::read(&target).map_err(|e| io(&rel, e))?;
+        lines.push(format!(
+            "{}  {base_rel}",
+            crate::evidence::sha256_hex(&bytes)
+        ));
+    } else if meta.is_dir() {
+        let mut stack: Vec<(PathBuf, String)> = vec![(target, base_rel)];
+        while let Some((dir, prefix)) = stack.pop() {
+            let entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&dir)
+                .map_err(|e| io(&prefix, e))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| io(&prefix, e))?;
+            let mut ordered = entries;
+            ordered.sort_by_key(|e| e.file_name());
+            for entry in ordered {
+                if lines.len() > 200_000 {
+                    return Err(StepError::Io(
+                        "cannot digest: tree exceeds 200,000 entries".to_string(),
+                    ));
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let entry_rel = if prefix.is_empty() {
+                    name
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                let ft = entry.file_type().map_err(|e| io(&entry_rel, e))?;
+                if ft.is_symlink() {
+                    let link = std::fs::read_link(entry.path()).map_err(|e| io(&entry_rel, e))?;
+                    lines.push(format!(
+                        "symlink  {entry_rel} -> {}",
+                        link.to_string_lossy()
+                    ));
+                } else if ft.is_dir() {
+                    lines.push(format!("dir  {entry_rel}/"));
+                    stack.push((entry.path(), entry_rel));
+                } else if ft.is_file() {
+                    let bytes = std::fs::read(entry.path()).map_err(|e| io(&entry_rel, e))?;
+                    lines.push(format!(
+                        "{}  {entry_rel}",
+                        crate::evidence::sha256_hex(&bytes)
+                    ));
+                } else {
+                    lines.push(format!("other  {entry_rel}"));
+                }
+            }
+        }
+    } else {
+        lines.push(format!("other  {base_rel}"));
+    }
+    lines.sort();
+    let text = if lines.is_empty() {
+        String::new()
+    } else {
+        lines.join("\n") + "\n"
+    };
+    Ok(ok_stdout(text.into_bytes(), start.elapsed()))
+}
+
+/// `fs.remove`: remove one worktree-relative file, symlink, or *empty*
+/// directory. Never recursive, never the worktree root (root-resolving paths
+/// are already refused by worktree confinement).
+fn fs_remove(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResult<StepOutcome> {
+    let rel = payload_string(payload, "path")
+        .ok_or_else(|| malformed("fs.remove requires a string `path`"))?;
+    let target = resolve_in_worktree(ctx.worktree, &rel)?;
+    let start = std::time::Instant::now();
+    let meta = std::fs::symlink_metadata(&target)
+        .map_err(|e| StepError::Io(format!("cannot remove `{rel}`: {e}")))?;
+    if meta.file_type().is_symlink() || meta.is_file() {
+        std::fs::remove_file(&target)
+            .map_err(|e| StepError::Io(format!("cannot remove `{rel}`: {e}")))?;
+    } else if meta.is_dir() {
+        std::fs::remove_dir(&target).map_err(|e| {
+            StepError::Io(format!(
+                "cannot remove `{rel}` (only empty directories): {e}"
+            ))
+        })?;
+    } else {
+        return Err(StepError::Io(format!(
+            "cannot remove `{rel}`: unsupported file kind"
+        )));
+    }
     Ok(StepOutcome {
         status: ExecutionStatus::Completed,
         exit_code: Some(0),

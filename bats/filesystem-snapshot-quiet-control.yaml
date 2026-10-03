@@ -1,0 +1,47 @@
+# Universal filesystem snapshot: quiet control
+
+# Claim:   an untouched probe path shows no change.
+# Attack:  digest the tree; touch nothing.
+# Oracle:  path_changed on a path that was never written.
+# Result:  NOT OBSERVED — which is NOT a correctness certificate, only
+#          "this attack did not falsify the claim". Every reusable species
+#          ships its control alongside its positive case.
+
+version: terrorbat/v1
+
+id: filesystem-snapshot-quiet-control
+
+claim:
+  text: >
+    An untouched probe path shows no change.
+
+requires:
+  - fs.read
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: digest
+      path: .
+
+oracle:
+  type: path_changed
+  path: tb-control-untouched.txt
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: builtin
+  tags: [universal, filesystem, snapshot, control]
+  description: >
+    Control case for the snapshot pattern: nothing is mutated, so the
+    falsification detector must stay quiet.
