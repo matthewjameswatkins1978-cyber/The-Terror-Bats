@@ -282,7 +282,7 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
                     step.phase, step.adapter, step.index
                 ),
                 reference: r.clone(),
-                truncated: false,
+                truncated: step.protocol_stdout_truncated,
             });
         }
         if let Some(r) = &step.protocol_stderr {
@@ -292,7 +292,7 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
                     step.phase, step.adapter, step.index
                 ),
                 reference: r.clone(),
-                truncated: false,
+                truncated: step.protocol_stderr_truncated,
             });
         }
         if let Some(r) = step

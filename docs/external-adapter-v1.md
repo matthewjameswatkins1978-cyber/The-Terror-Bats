@@ -106,6 +106,8 @@ An adapter never returns `PROVEN`. Process timeout, crash, cancellation, and pro
 
 Each executed external step records adapter name, implementation version, protocol version, description identity, configured program and ordered arguments. Describe diagnostics and execute-process diagnostics are separate evidence from logical step streams. Built-in steps omit all M8-only fields so built-in receipt serialization and content identities remain unchanged.
 
+Execute protocol streams record their observed byte totals and whether capture was truncated. Retained protocol evidence carries the same truncation flag, and receipt limitations state the retained and observed counts. Valid response stdout is parsed into logical streams rather than duplicated as protocol evidence; malformed or failed response stdout is retained. Exceeding either per-stream capture limit remains an infrastructure error and never proves a claim.
+
 Campaign children remain ordinary runs. Their receipts retain adapter provenance; the Campaign refuses to write its own receipt if an adapter description identity changes for an adapter already used during that Campaign. Pack identity remains about the Bat definitions.
 
 Replay of any Bat that references an external adapter requires an explicit `--adapters` file. Before creating a worktree, Terror Bat compares freshly advertised description identities with those recorded in the original receipt and refuses mismatches. It never executes a program path recovered from a receipt on its own.
