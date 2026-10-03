@@ -1,0 +1,69 @@
+# Species: false-success — green output contradicted by final state.
+#
+# Claim:   a step that reports success (exit 0) leaves the repository
+#          unmodified.
+# Attack:  run a real verifier that genuinely exits 0 (git --version:
+#          portable, no shell), AND mutate a file in the same attack.
+# Oracle:  deterministic conjunction — the exit really was 0, the path
+#          really changed, the diff really contains the mutation. All
+#          three legs must fire; prose judgement nowhere. The control
+#          (verifier alone, no mutation) breaks the conjunction and
+#          yields NOT OBSERVED.
+#
+# Portable sibling of bats/false-success.yaml (which demonstrates the
+# same thesis through cmd on Windows). This specimen uses only git and
+# built-ins, so it runs identically on Windows and Linux.
+# Against any clean repository with git: PROVEN.
+
+version: terrorbat/v1
+
+id: false-success-portable
+
+claim:
+  text: >
+    A command step whose output reports success leaves the repository
+    unmodified.
+
+requires:
+  - process.spawn
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: git
+      args:
+        - --version
+    - adapter: fs
+      action: write
+      path: tb-false-success.txt
+      text: "pwned=true\n"
+
+oracle:
+  all:
+    - type: exit_code
+      step: run:0
+      equals: 0
+    - type: path_changed
+      path: tb-false-success.txt
+    - type: git_diff_contains
+      substring: pwned=true
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, false-success, exit-zero-with-mutation]
+  description: >
+    Generic false-success specimen: exit 0 plus deterministic diff
+    evidence of mutation. Green output must never overrule final state.

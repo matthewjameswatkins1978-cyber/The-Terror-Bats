@@ -1,0 +1,61 @@
+# Species: idempotency — identical operation, repeated and replayed.
+#
+# Claim:   applying the operation a second time leaves no additional
+#          durable change beyond the first application.
+# Attack:  write the record, then apply the "same" operation again after a
+#          partial-completion stamp changed (attempt=2) — the replay-after-
+#          partial-completion shape. A truly idempotent second application
+#          would converge to identical bytes; here it diverges.
+# Oracle:  fires when the second application's stamp is durably present.
+#          The control (same bytes twice) converges and yields NOT
+#          OBSERVED — see tests/species.rs.
+#
+# Portable: built-ins only. Against any clean repository: PROVEN.
+
+version: terrorbat/v1
+
+id: idempotency-repeat
+
+claim:
+  text: >
+    Repeating the identical operation — including replay after partial
+    completion — leaves no additional durable change.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: idem/record.txt
+      text: "attempt=1\n"
+    - adapter: fs
+      action: write
+      path: idem/record.txt
+      text: "attempt=2\n"
+
+oracle:
+  any:
+    - type: git_diff_contains
+      substring: attempt=2
+    - type: path_changed
+      path: idem/record.txt
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, idempotency, replay, partial-completion]
+  description: >
+    Generic idempotency specimen: a repeated operation that diverges
+    instead of converging. The identical-bytes control must stay quiet.

@@ -1,0 +1,63 @@
+# Species: replay — receipt replay, stale targets, repeated replay.
+#
+# Claim:   this attack leaves no durable trace.
+# Attack:  write a trace file.
+# Oracle:  fires on the durable trace.
+#
+# The finding (PROVEN) is only half the specimen; the other half is the
+# replay contract enforced in tests/species.rs:
+#   - replay of the receipt in a fresh worktree reproduces the verdict
+#     and the oracle result (stale replay targets re-resolve against the
+#     pinned commit; a moved target fails closed, never silently passes);
+#   - repeated replay keeps reproducing (no single lucky run);
+#   - the original receipt is immutable (replay mints a new execution);
+#   - tampered evidence cannot be replayed as trusted proof — the
+#     trusted load path fails closed with TB-RECEIPT-CORRUPT (proven in
+#     tests/self_attack.rs; this species asserts the honest path it
+#     protects, and missing evidence likewise refuses instead of
+#     guessing).
+#
+# Portable: built-ins only. PROVEN on any clean repository.
+
+version: terrorbat/v1
+
+id: replay-fidelity
+
+claim:
+  text: >
+    This attack leaves no durable trace behind.
+
+requires:
+  - fs.write
+  - git.inspect
+
+attack:
+  run:
+    - adapter: fs
+      action: write
+      path: replay/trace.txt
+      text: "trace-marker=1\n"
+
+oracle:
+  any:
+    - type: path_changed
+      path: replay/trace.txt
+    - type: git_diff_contains
+      substring: trace-marker=1
+
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+
+timeout:
+  run: 60s
+  total: 120s
+
+meta:
+  origin: species
+  tags: [species, replay, fidelity, stale-target, repeated-replay]
+  description: >
+    Generic replay specimen: the trace that proves the finding must also
+    prove it again under replay, in a fresh worktree, every time.

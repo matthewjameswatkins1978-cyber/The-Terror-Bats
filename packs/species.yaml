@@ -1,0 +1,30 @@
+# Terror Bat generic-species pack (Packet 1).
+#
+# Every entry is a portable, target-agnostic attack specimen: built-ins
+# only, no shell, no Lantern/Threadmoth coupling, Windows + Linux clean.
+# Each positive Bat yields PROVEN against any clean target repository;
+# the matching quiet controls live in tests/species.rs (a control is a
+# test shape, not a shippable attack, so it is not packed).
+#
+# Validate: terrorbat pack check packs/species.yaml
+# Identify: terrorbat pack id packs/species.yaml
+# Campaign: terrorbat pack run packs/species.yaml --repo <clean-repo>
+
+version: terrorbat-pack/v1
+
+id: species
+
+description: >
+  Generic attack species: same-key concurrency, durability across the
+  reopen seam, idempotent repeat, CRLF git integrity, exit-code honesty,
+  portable false-success, replay fidelity, and unicode boundary handling.
+
+bats:
+  - path: ../bats/species/concurrency-same-key.yaml
+  - path: ../bats/species/durability-reopen.yaml
+  - path: ../bats/species/idempotency-repeat.yaml
+  - path: ../bats/species/git-integrity-crlf.yaml
+  - path: ../bats/species/process-exit-code.yaml
+  - path: ../bats/species/false-success-portable.yaml
+  - path: ../bats/species/replay-fidelity.yaml
+  - path: ../bats/species/filesystem-boundary-unicode.yaml
