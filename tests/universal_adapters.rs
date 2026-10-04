@@ -20,6 +20,9 @@ fn ctx<'a>(worktree: &'a Path, spec_dir: &'a Path) -> StepCtx<'a> {
         worktree,
         spec_dir,
         deadline: Some(std::time::Duration::from_secs(30)),
+        processes: None,
+        phase: "test",
+        step_index: 0,
     }
 }
 

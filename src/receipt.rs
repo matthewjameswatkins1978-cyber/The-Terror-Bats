@@ -167,6 +167,8 @@ pub struct ExecutionBlock {
     pub finished_unix_ms: u64,
     pub wall_ms: u64,
     pub steps: Vec<StepRecord>,
+    #[serde(default)]
+    pub processes: crate::process_runtime::ProcessRuntimeReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,6 +332,7 @@ pub fn build(manifest: &RunManifest, claim_text: &str, oracle: OracleBlock) -> R
             finished_unix_ms: manifest.finished_unix_ms,
             wall_ms: manifest.wall_ms,
             steps: manifest.steps.clone(),
+            processes: manifest.processes.clone(),
         },
         adapter_bindings_required: manifest.adapter_bindings_required,
         resolved_adapters: manifest.resolved_adapters.clone(),
@@ -524,6 +527,7 @@ pub struct ReplayReport {
     pub same_status: bool,
     pub same_oracle: bool,
     pub same_verdict: bool,
+    pub same_process_semantics: bool,
     pub evidence_changes: Vec<String>,
     pub environment_changes: Vec<String>,
     pub notes: Vec<String>,
@@ -736,9 +740,85 @@ fn compare(original: &Receipt, new: &Receipt, notes: Vec<String>) -> ReplayRepor
         same_status: original.execution.status == new.execution.status,
         same_oracle: original.oracle.result == new.oracle.result,
         same_verdict: original.verdict == new.verdict,
+        same_process_semantics: same_process_semantics(
+            &original.execution.processes,
+            &new.execution.processes,
+            &original.execution.steps,
+            &new.execution.steps,
+        ),
         evidence_changes,
         environment_changes,
         notes,
+    }
+}
+
+fn same_process_semantics(
+    original: &crate::process_runtime::ProcessRuntimeReport,
+    replay: &crate::process_runtime::ProcessRuntimeReport,
+    original_steps: &[crate::runner::StepRecord],
+    replay_steps: &[crate::runner::StepRecord],
+) -> bool {
+    if original.cleanup.attempted != replay.cleanup.attempted
+        || original.cleanup.terminated.len() != replay.cleanup.terminated.len()
+        || original.cleanup.forced.len() != replay.cleanup.forced.len()
+        || original.cleanup.survivors.len() != replay.cleanup.survivors.len()
+        || original.cleanup.errors.len() != replay.cleanup.errors.len()
+        || original.handles.len() != replay.handles.len()
+        || !same_process_steps(original_steps, replay_steps)
+    {
+        return false;
+    }
+    original.handles.iter().zip(&replay.handles).all(|(a, b)| {
+        a.handle == b.handle
+            && a.generations.len() == b.generations.len()
+            && a.generations.iter().zip(&b.generations).all(|(x, y)| {
+                x.generation == y.generation
+                    && x.termination == y.termination
+                    && x.exit_code == y.exit_code
+                    && x.signal == y.signal
+                    && x.events_truncated == y.events_truncated
+                    && x.events.len() == y.events.len()
+                    && x.events.iter().zip(&y.events).all(|(u, v)| {
+                        u.phase == v.phase
+                            && u.step_index == v.step_index
+                            && u.event == v.event
+                            && u.detail == v.detail
+                    })
+            })
+    })
+}
+
+fn same_process_steps(
+    original: &[crate::runner::StepRecord],
+    replay: &[crate::runner::StepRecord],
+) -> bool {
+    let original = original.iter().filter(|step| step.adapter == "process");
+    let replay = replay.iter().filter(|step| step.adapter == "process");
+    let mut original = original.peekable();
+    let mut replay = replay.peekable();
+    loop {
+        match (original.next(), replay.next()) {
+            (Some(a), Some(b)) => {
+                if a.phase != b.phase
+                    || a.index != b.index
+                    || a.action != b.action
+                    || a.payload != b.payload
+                    || a.status != b.status
+                    || a.exit_code != b.exit_code
+                    || a.signal != b.signal
+                    || a.stdout.as_ref().map(|r| &r.0) != b.stdout.as_ref().map(|r| &r.0)
+                    || a.stdout_total_bytes != b.stdout_total_bytes
+                    || a.stdout_truncated != b.stdout_truncated
+                    || a.stderr.as_ref().map(|r| &r.0) != b.stderr.as_ref().map(|r| &r.0)
+                    || a.stderr_total_bytes != b.stderr_total_bytes
+                    || a.stderr_truncated != b.stderr_truncated
+                {
+                    return false;
+                }
+            }
+            (None, None) => return true,
+            _ => return false,
+        }
     }
 }
 

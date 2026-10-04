@@ -45,16 +45,88 @@ A `planned` adapter is never silently emulated.
 | `snapshot`  | composition       | `fs.digest` + git captures + oracle          |
 | `external`  | external-protocol | Specialist escape hatch (JSONL stdio)        |
 
+## Stateful process lifecycle
+
+The process adapter owns a handle for one Bat execution. A handle keeps every
+generation; restart requires the previous generation to be terminal and starts
+the next generation from the original argv/cwd/environment settings. Replay
+repeats the declarative attack with new PIDs and timestamps. Those instance
+values are receipt evidence, not Bat identity.
+
+Readiness is condition-based and bounded. `wait_ready` supports stdout or stderr
+text/regex, a literal IP and TCP port, or an alive-for probe. A timeout means
+the condition was not observed in time; it does not establish a target failure.
+`observe` returns bytes since the previous observation and preserves honest byte
+totals when the bounded tail has truncated output.
+
+```yaml
+claim:
+  text: A worker drops requests sent after it announces readiness.
+requires: [process.start, process.readiness, process.stdin, process.observe, process.kill]
+attack:
+  run:
+    - adapter: process
+      action: start
+      handle: worker
+      program: python
+      args: [-u, worker.py]
+      cwd: .
+      stdin: piped
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: READY
+      timeout_ms: 5000
+    - adapter: process
+      action: write_stdin
+      handle: worker
+      text: ping
+      newline: true
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: ECHO:ping
+      timeout_ms: 2000
+    - adapter: process
+      action: observe
+      handle: worker
+    - adapter: process
+      action: kill
+      handle: worker
+      timeout_ms: 2000
+oracle:
+  all:
+    - type: text_contains
+      step: run:4
+      stream: stdout
+      substring: ECHO:ping
+```
+
+The receipt records handle/generation, root PID and process identity, argv,
+cwd label, lifecycle events, exit/termination state, bounded output counts,
+and cleanup. Root-process identity is instance-specific; generation order,
+events and exit/termination outcomes are semantic replay evidence. Cleanup
+attempts graceful termination before forced termination and records root
+survivors. It does not enumerate each descendant or detect a descendant that
+escapes its owned process group/job, and this runtime is not a hostile-code
+sandbox.
+
+On Linux, `terminate` requests SIGTERM to the owned process group. On Windows,
+graceful termination is explicitly unsupported; use `kill` for Job-based forced
+termination. Both platforms support bounded wait, readiness, stdin,
+observation and restart.
+
 ## Composition
 
 The important part is that adapters compose. A Bat can do:
 
 ```text
 filesystem.snapshot (fs.digest in setup)
-process.start       (command.run, supervised)
-http.request        (curl step)
-http.request        (curl step)
-process.kill        (timeout / tree termination)
+process.start       (argv-based, supervised)
+process.wait_ready  (condition-based readiness)
+process.write_stdin (same live handle)
+process.observe     (bounded output since last read)
+process.kill        (owned process group/job termination)
 filesystem.snapshot (fs.digest again)
 oracle.evaluate     (path_changed, text_contains, json_value_equals)
 ```

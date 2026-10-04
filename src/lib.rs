@@ -21,6 +21,7 @@ pub mod oracle;
 pub mod pack;
 pub mod params;
 pub mod presentation;
+pub mod process_runtime;
 pub mod receipt;
 pub mod runner;
 pub mod spec;

@@ -76,6 +76,7 @@ impl From<&StepError> for RunStatus {
             StepError::Policy(_) => RunStatus::PolicyDenied,
             StepError::Malformed(_) => RunStatus::Invalid,
             StepError::Io(_) => RunStatus::InfrastructureError,
+            StepError::Unsupported(_) => RunStatus::Unsupported,
         }
     }
 }
@@ -203,6 +204,8 @@ pub struct RunManifest {
     pub wall_ms: u64,
     pub run_status: RunStatus,
     pub steps: Vec<StepRecord>,
+    #[serde(default)]
+    pub processes: crate::process_runtime::ProcessRuntimeReport,
     pub captures: Captures,
     pub worktree: WorktreeRecord,
     pub capabilities: CapabilitiesRecord,
@@ -355,6 +358,8 @@ pub fn run_bat_with_adapter_expectations(
     let mut limitations = base_limitations();
 
     let resolved_adapter_provenance = std::cell::RefCell::new(Vec::new());
+    let process_report =
+        std::cell::RefCell::new(crate::process_runtime::ProcessRuntimeReport::default());
     // Early-exit finaliser: every path through this function leaves a
     // truthful manifest and receipt behind.
     let finish = |run_status: RunStatus,
@@ -387,6 +392,7 @@ pub fn run_bat_with_adapter_expectations(
             wall_ms: started.elapsed().as_millis() as u64,
             run_status,
             steps,
+            processes: process_report.borrow().clone(),
             captures,
             worktree: worktree_rec,
             capabilities: capabilities.clone(),
@@ -624,7 +630,8 @@ pub fn run_bat_with_adapter_expectations(
             wt_path.display()
         ));
     }
-    let (run_status, steps, captures, evaluation) = result?;
+    let (run_status, steps, captures, evaluation, processes) = result?;
+    *process_report.borrow_mut() = processes;
     let oracle_block = evaluation.map(|ev| OracleBlock {
         result: Some(ev.result),
         note: None,
@@ -663,9 +670,12 @@ fn execute_attack(
     Vec<StepRecord>,
     Captures,
     Option<OracleEvaluation>,
+    crate::process_runtime::ProcessRuntimeReport,
 )> {
     let mut steps: Vec<StepRecord> = Vec::new();
     let mut captures = Captures::default();
+    let process_registry =
+        std::cell::RefCell::new(crate::process_runtime::ProcessRegistry::new(execution_id));
     let attack_start = Instant::now();
     let total_budget = spec
         .timeout
@@ -678,6 +688,9 @@ fn execute_attack(
         worktree: wt_path,
         spec_dir,
         deadline: Some(Duration::from_secs(120)),
+        processes: Some(&process_registry),
+        phase: "setup",
+        step_index: 0,
     };
     match builtins::dispatch("git", "worktree.snapshot", &BTreeMap::new(), &ctx) {
         Ok(out) if out.status == ExecutionStatus::Completed && out.exit_code == Some(0) => {
@@ -722,6 +735,7 @@ fn execute_attack(
             adapters,
             &target.commit,
             execution_id,
+            &process_registry,
             store,
             oplog,
             &mut steps,
@@ -732,6 +746,17 @@ fn execute_attack(
         }
     }
 
+    let cleanup = process_registry.borrow_mut().cleanup().clone();
+    if !cleanup.survivors.is_empty() || !cleanup.errors.is_empty() {
+        limitations.push(format!(
+            "persistent process cleanup incomplete: survivors={:?}; errors={:?}",
+            cleanup.survivors, cleanup.errors
+        ));
+        if run_status == RunStatus::Completed {
+            run_status = RunStatus::InfrastructureError;
+        }
+    }
+    let process_report = process_registry.borrow().report();
     // Post-state capture happens even after mechanical failure: the point is
     // that observable state survives long enough to be collected.
     capture_post_state(wt_path, target, store, oplog, &mut captures, limitations)?;
@@ -776,13 +801,26 @@ fn execute_attack(
         evaluation = Some(eval);
     }
 
-    Ok((run_status, steps, captures, evaluation))
+    Ok((run_status, steps, captures, evaluation, process_report))
 }
 
 /// Execute one ordered phase. Returns `Some(status)` when a mechanical
 /// failure halts the run. A Completed step with nonzero exit code does NOT
 /// halt — the oracle decides what exit codes mean.
 #[allow(clippy::too_many_arguments)]
+fn receipt_step_payload(adapter: &str, action: &str, payload: &BTreeMap<String, Value>) -> Value {
+    let mut safe = payload.clone();
+    if matches!((adapter, action), ("process", "start") | ("command", "run"))
+        && let Some(Value::Object(env)) = safe.get_mut("env")
+    {
+        for value in env.values_mut() {
+            *value = Value::String("[REDACTED]".to_string());
+        }
+    }
+    Value::Object(safe.into_iter().collect())
+}
+
+#[allow(clippy::too_many_arguments)] // Execution phase has explicit shared state and evidence sinks.
 fn execute_phase(
     phase: &'static str,
     steps: &[crate::spec::Step],
@@ -793,6 +831,7 @@ fn execute_phase(
     adapters: &ResolvedAdapters,
     target_commit: &str,
     execution_id: &str,
+    processes: &std::cell::RefCell<crate::process_runtime::ProcessRegistry>,
     store: &EvidenceStore,
     oplog: &mut OperationLog,
     records: &mut Vec<StepRecord>,
@@ -811,12 +850,7 @@ fn execute_phase(
                 index,
                 adapter: step.adapter.clone(),
                 action: step.action.clone(),
-                payload: Value::Object(
-                    step.payload
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                ),
+                payload: receipt_step_payload(&step.adapter, &step.action, &step.payload),
                 status: RunStatus::TimedOut,
                 exit_code: None,
                 signal: None,
@@ -858,6 +892,9 @@ fn execute_phase(
             worktree: wt_path,
             spec_dir,
             deadline: remaining,
+            processes: Some(processes),
+            phase,
+            step_index: index,
         };
         let started = Instant::now();
         let (
@@ -970,12 +1007,7 @@ fn execute_phase(
             index,
             adapter: step.adapter.clone(),
             action: step.action.clone(),
-            payload: Value::Object(
-                step.payload
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            ),
+            payload: receipt_step_payload(&step.adapter, &step.action, &step.payload),
             status,
             exit_code,
             signal,
@@ -1203,9 +1235,9 @@ fn capabilities_record(spec: &BatSpec) -> CapabilitiesRecord {
     let mut unenforced: BTreeSet<String> = BTreeSet::new();
     for cap in spec.requires.iter().chain(spec.forbids.iter()) {
         let name = cap.0.split(':').next().unwrap_or(&cap.0).trim().to_string();
-        // process.spawn has partial real enforcement (M2 tree ownership);
-        // everything else at host level is advisory in worktree mode.
-        if name != "process.spawn" {
+        // Built-in lifecycle capabilities are preflight-enforced as declared
+        // operation requirements. Other host-level access remains advisory.
+        if name != "process.spawn" && !name.starts_with("process.") {
             unenforced.insert(name);
         }
     }
@@ -1223,6 +1255,8 @@ fn capabilities_record(spec: &BatSpec) -> CapabilitiesRecord {
         declared_requires: spec.requires.iter().map(|c| c.0.clone()).collect(),
         declared_forbids: spec.forbids.iter().map(|c| c.0.clone()).collect(),
         enforced: vec![
+            "built-in adapter action capabilities are checked against declared requires/forbids"
+                .to_string(),
             "process-tree ownership (M2 model: supervised spawn, group/job termination)"
                 .to_string(),
             "built-in step path confinement to the worktree (validation, not a sandbox)"

@@ -288,38 +288,92 @@ pub fn all() -> Vec<AdapterInfo> {
             "process",
             "Universal Process Adapter",
             "builtin-partial",
-            "Long-running programs: start → observe → interact → stop → inspect. Today's \
-             subset is honest: command.run provides supervised spawn, deadline, tree-scoped \
-             termination, crash/timeout classification, and log capture; readiness gates \
-             (port open, stdout pattern, file exists, command succeeds, HTTP responds) are \
-             expressed as subsequent steps or oracle verifiers. A single-step lifecycle with \
-             cross-step process handles is planned.",
-            vec![op(
-                "run (lifecycle subset)",
-                "Supervised execution with timeout, process-tree kill, orphan-descendant reaping, exit-state inspection, and captured logs. Restart = another step.",
-                &[
-                    "program, args, cwd, env, stdin (as command.run)",
-                    "step/oracle timeout budget",
-                ],
-                &[
-                    "exit code/signal",
-                    "stdout/stderr logs",
-                    "timeout vs crash classification",
-                    "cleanup record",
-                ],
-                "process.spawn",
-                "adapter: command, action: run, program: python, args: [server.py] + oracle exit_code / timeout probe",
-            )],
-            &["process.spawn"],
+            "Stateful process generations can span Bat steps: start, wait for stdout/stderr/TCP/alive readiness, write stdin, observe bounded output, wait, terminate, kill, and restart. Handles are execution-local; replay creates fresh operating-system identities. The adapter remains partial because graceful terminate is Unix-only and the report identifies the owned root process, not every descendant.",
+            vec![
+                op(
+                    "start",
+                    "Start an argv-based process generation under the process-group/job supervisor.",
+                    &["handle, program, args, cwd, env, stdin, output_limit_bytes"],
+                    &["generation, PID, root identity, start event"],
+                    "process.start",
+                    "adapter: process, action: start, handle: worker, program: python, args: [-u, worker.py], stdin: piped",
+                ),
+                op(
+                    "wait_ready",
+                    "Wait for stdout/stderr contains or regex, a literal-IP TCP listener, or an alive-for probe; returns on condition or bounded timeout.",
+                    &["handle, one readiness condition, timeout_ms"],
+                    &["ready or timed-out execution status; probe event"],
+                    "process.readiness",
+                    "adapter: process, action: wait_ready, handle: worker, stdout_contains: READY, timeout_ms: 5000",
+                ),
+                op(
+                    "write_stdin",
+                    "Queue bounded bytes/text to the same live process; optionally append newline or close stdin.",
+                    &["handle, text or bytes, newline, close"],
+                    &["input lifecycle event"],
+                    "process.stdin",
+                    "adapter: process, action: write_stdin, handle: worker, text: ping, newline: true",
+                ),
+                op(
+                    "observe",
+                    "Return output since the previous observation with actual byte totals and bounded-tail truncation honesty.",
+                    &["handle"],
+                    &["stdout/stderr bytes, totals, truncation flags, current root exit state"],
+                    "process.observe",
+                    "adapter: process, action: observe, handle: worker",
+                ),
+                op(
+                    "terminate",
+                    "Request graceful termination of the owned process group using SIGTERM.",
+                    &["handle"],
+                    &["termination request lifecycle event"],
+                    "process.terminate",
+                    "adapter: process, action: terminate, handle: worker",
+                ),
+                op(
+                    "kill",
+                    "Force termination of the owned process group/job and wait up to the supplied bound.",
+                    &["handle, timeout_ms"],
+                    &["termination, exit state, timeout or survivor error"],
+                    "process.kill",
+                    "adapter: process, action: kill, handle: worker, timeout_ms: 2000",
+                ),
+                op(
+                    "wait",
+                    "Wait for a generation to exit up to a bounded timeout.",
+                    &["handle, timeout_ms"],
+                    &["exit code/signal or timeout"],
+                    "process.wait",
+                    "adapter: process, action: wait, handle: worker, timeout_ms: 2000",
+                ),
+                op(
+                    "restart",
+                    "Start the next generation from the original start specification after the current generation is terminal.",
+                    &["handle"],
+                    &["new generation and preserved prior history"],
+                    "process.restart",
+                    "adapter: process, action: restart, handle: worker",
+                ),
+            ],
             &[
-                "No persistent process handle across steps yet; each step is one supervised tree.",
-                "A double-fork daemon that leaves the group/job can escape tree termination (documented M2 limit).",
-                "Readiness today is polled by follow-up steps (fs.read for file-exists, command.run for port/command probes), not by a built-in wait primitive.",
+                "process.start",
+                "process.readiness",
+                "process.stdin",
+                "process.observe",
+                "process.terminate",
+                "process.kill",
+                "process.wait",
+                "process.restart",
+            ],
+            &[
+                "Handles live for one Bat execution only. Restart preserves the previous generation and assigns a new generation number and process identity.",
+                "Cleanup makes a bounded graceful-then-force attempt and reports root-process survivors; escaped or individually surviving descendants are not enumerated.",
+                "Output is a bounded tail. Totals and truncation are explicit; readiness timeout is not evidence that the target is ready or defective.",
             ],
             &["servers, daemons, workers, local databases, language servers, background services"],
             &[
-                "Windows: forced job termination (no graceful signal).",
-                "Linux: SIGTERM grace period then SIGKILL to the group.",
+                "Windows: process.start, readiness, stdin, wait, restart, and forced Job-based kill are supported; graceful terminate is explicitly unsupported.",
+                "Linux: process-group SIGTERM terminate and SIGKILL forced kill are supported.",
             ],
         ),
         adapter(
@@ -329,7 +383,7 @@ pub fn all() -> Vec<AdapterInfo> {
             "Machine interfaces over stdin/stdout (line protocol, raw bytes, JSON, JSONL, \
              request/response). Today: command.run with `stdin:` covers one-shot interactions \
              and scripted sessions (heredoc-style inputs, JSONL payloads). Persistent \
-             multi-turn process conversations with a live handle are planned.",
+              multi-turn process conversations with a live handle use the stateful process adapter.",
             vec![op(
                 "run with stdin (one-shot session)",
                 "Feed bytes/JSON/JSONL on stdin; capture stdout/stderr; judge structurally with the JSON oracle and text conditions.",
@@ -340,7 +394,7 @@ pub fn all() -> Vec<AdapterInfo> {
             )],
             &["process.spawn"],
             &[
-                "One-shot only: no live back-and-forth handle across steps yet.",
+                "One-shot command input only; process handles and multi-turn conversations are provided by the process adapter.",
                 "For JSONL workers, one stdin document per line; responses judged from captured stdout.",
             ],
             &[

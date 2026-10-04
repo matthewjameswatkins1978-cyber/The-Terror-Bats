@@ -406,6 +406,7 @@ fn all_top_level_surfaces_use_the_canonical_sigil() {
                 same_status: true,
                 same_oracle: true,
                 same_verdict: true,
+                same_process_semantics: true,
                 evidence_changes: vec![],
                 environment_changes: vec![],
                 notes: vec![],

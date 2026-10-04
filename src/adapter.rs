@@ -135,7 +135,7 @@ fn failure(status: RunStatus, message: impl Into<String>) -> PreflightFailure {
     }
 }
 pub fn is_builtin(name: &str) -> bool {
-    matches!(name, "command" | "fs" | "git")
+    matches!(name, "command" | "fs" | "git" | "process")
 }
 
 pub fn load_bindings(path: Option<&Path>) -> Result<Option<BindingsFile>, String> {

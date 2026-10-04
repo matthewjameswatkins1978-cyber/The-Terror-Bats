@@ -725,6 +725,9 @@ fn run_verifier(
         worktree: ctx.worktree,
         spec_dir: ctx.spec_dir,
         deadline: ctx.verifier_deadline,
+        processes: None,
+        phase: "oracle",
+        step_index: ctx.verifier_steps.len(),
     };
     let index = ctx.verifier_steps.len();
     let started = std::time::Instant::now();

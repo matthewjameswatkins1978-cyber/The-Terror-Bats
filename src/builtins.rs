@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::process_runtime::{self, ProcessRegistry};
 use crate::supervisor::{
     CancelToken, ExecutionStatus, StdinPolicy, SupervisedCommand, SupervisedOutcome,
 };
@@ -29,6 +30,8 @@ pub enum StepError {
     Malformed(String),
     /// Infrastructure failure (filesystem/OS error).
     Io(String),
+    /// The requested operation is unavailable on this platform.
+    Unsupported(String),
 }
 
 impl std::fmt::Display for StepError {
@@ -37,6 +40,7 @@ impl std::fmt::Display for StepError {
             StepError::Policy(m) => write!(f, "{m}"),
             StepError::Malformed(m) => write!(f, "{m}"),
             StepError::Io(m) => write!(f, "{m}"),
+            StepError::Unsupported(m) => write!(f, "{m}"),
         }
     }
 }
@@ -47,6 +51,14 @@ pub type StepResult<T> = std::result::Result<T, StepError>;
 pub fn required_capability(adapter: &str, action: &str) -> Option<&'static str> {
     match (adapter, action) {
         ("command", "run") => Some("process.spawn"),
+        ("process", "start") => Some("process.start"),
+        ("process", "wait_ready") => Some("process.readiness"),
+        ("process", "write_stdin") => Some("process.stdin"),
+        ("process", "observe") => Some("process.observe"),
+        ("process", "terminate") => Some("process.terminate"),
+        ("process", "kill") => Some("process.kill"),
+        ("process", "wait") => Some("process.wait"),
+        ("process", "restart") => Some("process.restart"),
         ("fs", "write") => Some("fs.write"),
         ("fs", "mkdir") => Some("fs.write"),
         ("fs", "remove") => Some("fs.write"),
@@ -200,6 +212,9 @@ pub struct StepCtx<'a> {
     pub spec_dir: &'a Path,
     /// Remaining wall-clock budget for this step, if any.
     pub deadline: Option<Duration>,
+    pub processes: Option<&'a std::cell::RefCell<ProcessRegistry>>,
+    pub phase: &'a str,
+    pub step_index: usize,
 }
 
 fn payload_string(payload: &BTreeMap<String, Value>, key: &str) -> Option<String> {
@@ -212,6 +227,55 @@ fn malformed(msg: impl Into<String>) -> StepError {
 
 /// Dispatch one built-in step. Unknown adapters/actions are malformed input
 /// (the runner also rejects them earlier during capability preflight).
+fn process_dispatch(
+    action: &str,
+    payload: &BTreeMap<String, Value>,
+    ctx: &StepCtx<'_>,
+) -> StepResult<StepOutcome> {
+    let handle = payload_string(payload, "handle")
+        .ok_or_else(|| malformed(format!("process.{action} requires string `handle`")))?;
+    let mut registry = ctx
+        .processes
+        .ok_or_else(|| StepError::Io("process registry unavailable in this phase".into()))?
+        .borrow_mut();
+    match action {
+        "start" => registry.start(
+            &handle,
+            process_runtime::start_spec(payload, ctx.worktree)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "wait_ready" => registry.ready(
+            &handle,
+            process_runtime::parse_readiness(payload)?,
+            process_runtime::millis(payload, "timeout_ms", true)?,
+            ctx.deadline,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "write_stdin" => {
+            let (b, n, c) = process_runtime::write_data(payload)?;
+            registry.write(&handle, b, n, c, ctx.phase, ctx.step_index)
+        }
+        "observe" => registry.observe(&handle, ctx.phase, ctx.step_index),
+        "terminate" => registry.terminate(&handle, ctx.phase, ctx.step_index),
+        "kill" => registry.kill(
+            &handle,
+            process_runtime::millis(payload, "timeout_ms", false)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "wait" => registry.wait(
+            &handle,
+            process_runtime::millis(payload, "timeout_ms", true)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "restart" => registry.restart(&handle, ctx.phase, ctx.step_index),
+        _ => Err(malformed(format!("unknown process action `{action}`"))),
+    }
+}
+
 pub fn dispatch(
     adapter: &str,
     action: &str,
@@ -220,6 +284,7 @@ pub fn dispatch(
 ) -> StepResult<StepOutcome> {
     match (adapter, action) {
         ("command", "run") => command_run(payload, ctx),
+        ("process", action) => process_dispatch(action, payload, ctx),
         ("fs", "write") => fs_write(payload, ctx),
         ("fs", "mkdir") => fs_mkdir(payload, ctx),
         ("fs", "read") => fs_read(payload, ctx),

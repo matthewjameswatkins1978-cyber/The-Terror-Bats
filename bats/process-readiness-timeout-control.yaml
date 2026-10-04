@@ -1,0 +1,35 @@
+version: terrorbat/v1
+id: process-readiness-timeout-control
+claim:
+  text: A silent worker announces readiness within the bounded probe interval.
+requires: [process.start, process.readiness, process.kill]
+attack:
+  run:
+    - adapter: process
+      action: start
+      handle: worker
+      program:
+        $param: worker_program
+      args:
+        - -u
+        - -c
+        - $param: worker_code
+      cwd: .
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: READY
+      timeout_ms: 100
+oracle:
+  all: []
+params:
+  worker_program:
+    type: string
+    default: python
+  worker_code:
+    type: string
+    default: "import time; time.sleep(60)"
+evidence:
+  capture: [stdout, stderr, git_status]
+timeout:
+  run: 5s

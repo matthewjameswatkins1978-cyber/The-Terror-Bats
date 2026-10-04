@@ -445,6 +445,7 @@ pub fn document_replay(report: &ReplayReport, caps: &Capabilities) -> Document {
             Fact::new("Execution status", yn(report.same_status)),
             Fact::new("Oracle result", yn(report.same_oracle)),
             Fact::new("Verdict", yn(report.same_verdict)),
+            Fact::new("Process lifecycle", yn(report.same_process_semantics)),
         ],
     });
     if !report.evidence_changes.is_empty() {

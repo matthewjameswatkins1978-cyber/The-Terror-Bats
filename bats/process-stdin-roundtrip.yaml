@@ -1,0 +1,57 @@
+version: terrorbat/v1
+id: process-stdin-roundtrip
+claim:
+  text: A persistent line worker drops requests sent after it announces readiness.
+requires: [process.start, process.readiness, process.stdin, process.observe, process.kill]
+attack:
+  run:
+    - adapter: process
+      action: start
+      handle: worker
+      program:
+        $param: worker_program
+      args:
+        - -u
+        - -c
+        - $param: worker_code
+      cwd: .
+      stdin: piped
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: READY
+      timeout_ms: 5000
+    - adapter: process
+      action: write_stdin
+      handle: worker
+      text: ping
+      newline: true
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: ECHO:ping
+      timeout_ms: 2000
+    - adapter: process
+      action: observe
+      handle: worker
+    - adapter: process
+      action: kill
+      handle: worker
+      timeout_ms: 2000
+oracle:
+  all:
+    - type: text_contains
+      step: run:4
+      stream: stdout
+      substring: ECHO:ping
+params:
+  worker_program:
+    type: string
+    default: python
+  worker_code:
+    type: string
+    default: "import sys; print('READY', flush=True); [print('ECHO:' + line.rstrip(), flush=True) for line in sys.stdin]"
+evidence:
+  capture: [stdout, stderr, git_status]
+timeout:
+  run: 15s
