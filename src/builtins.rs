@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::process_runtime::{self, ProcessRegistry};
 use crate::supervisor::{
     CancelToken, ExecutionStatus, StdinPolicy, SupervisedCommand, SupervisedOutcome,
 };
@@ -29,6 +30,8 @@ pub enum StepError {
     Malformed(String),
     /// Infrastructure failure (filesystem/OS error).
     Io(String),
+    /// The requested operation is unavailable on this platform.
+    Unsupported(String),
 }
 
 impl std::fmt::Display for StepError {
@@ -37,6 +40,7 @@ impl std::fmt::Display for StepError {
             StepError::Policy(m) => write!(f, "{m}"),
             StepError::Malformed(m) => write!(f, "{m}"),
             StepError::Io(m) => write!(f, "{m}"),
+            StepError::Unsupported(m) => write!(f, "{m}"),
         }
     }
 }
@@ -47,6 +51,14 @@ pub type StepResult<T> = std::result::Result<T, StepError>;
 pub fn required_capability(adapter: &str, action: &str) -> Option<&'static str> {
     match (adapter, action) {
         ("command", "run") => Some("process.spawn"),
+        ("process", "start") => Some("process.start"),
+        ("process", "wait_ready") => Some("process.readiness"),
+        ("process", "write_stdin") => Some("process.stdin"),
+        ("process", "observe") => Some("process.observe"),
+        ("process", "terminate") => Some("process.terminate"),
+        ("process", "kill") => Some("process.kill"),
+        ("process", "wait") => Some("process.wait"),
+        ("process", "restart") => Some("process.restart"),
         ("fs", "write") => Some("fs.write"),
         ("fs", "mkdir") => Some("fs.write"),
         ("fs", "remove") => Some("fs.write"),
@@ -75,15 +87,25 @@ pub fn resolve_in_worktree(worktree: &Path, rel: &str) -> StepResult<PathBuf> {
         ));
     }
     let p = Path::new(rel);
-    if p.has_root() || p.is_absolute() || rel.starts_with("\\\\") || rel.starts_with("//") {
+    if p.has_root() || p.is_absolute() || rel.starts_with("//") {
         return Err(policy(format!(
             "path `{rel}` is absolute, rooted, or UNC; worktree-relative paths only"
         )));
     }
-    if rel.contains(':') {
-        return Err(policy(format!(
-            "path `{rel}` contains a drive or alternate-data-stream separator"
-        )));
+    // Windows drive / UNC / ADS syntax is Windows-only reasoning. On Unix a
+    // backslash is an ordinary filename character, not a separator, so these
+    // checks must not reject Unix filenames (see `escaping_paths_are_rejected`).
+    if cfg!(windows) {
+        if rel.starts_with("\\\\") {
+            return Err(policy(format!(
+                "path `{rel}` is UNC; worktree-relative paths only"
+            )));
+        }
+        if rel.contains(':') {
+            return Err(policy(format!(
+                "path `{rel}` contains a drive or alternate-data-stream separator"
+            )));
+        }
     }
     // Lexical normalisation with `..` escape rejection.
     let mut normalized = PathBuf::new();
@@ -200,6 +222,9 @@ pub struct StepCtx<'a> {
     pub spec_dir: &'a Path,
     /// Remaining wall-clock budget for this step, if any.
     pub deadline: Option<Duration>,
+    pub processes: Option<&'a std::cell::RefCell<ProcessRegistry>>,
+    pub phase: &'a str,
+    pub step_index: usize,
 }
 
 fn payload_string(payload: &BTreeMap<String, Value>, key: &str) -> Option<String> {
@@ -210,8 +235,91 @@ fn malformed(msg: impl Into<String>) -> StepError {
     StepError::Malformed(msg.into())
 }
 
+/// Resolve one `env` mapping value for process start.
+///
+/// Accepts a plain string, or a runtime-only secret reference
+/// `{"$secret": "NAME"}` resolved from the execution environment at dispatch
+/// time. The resolved value only ever lives in Terror Bat's own memory and in
+/// the spawned child's environment: the declarative configuration (Bat source,
+/// canonical spec, receipt invocation payloads) keeps the reference, so replay
+/// resolves it again and a missing variable fails closed instead of running
+/// with an empty secret. This does NOT sanitise what the child itself emits:
+/// captured child stdout/stderr and files read back as evidence are stored
+/// byte-verbatim, so a target that prints its secret discloses it into the
+/// evidence store. Authors must keep secrets out of child-observable output.
+pub fn resolve_env_value(key: &str, value: &Value) -> StepResult<OsString> {
+    if let Some(s) = value.as_str() {
+        return Ok(OsString::from(s));
+    }
+    if let Some(obj) = value.as_object()
+        && obj.len() == 1
+        && let Some(Value::String(name)) = obj.get("$secret")
+    {
+        if name.is_empty() {
+            return Err(malformed(
+                "env `$secret` reference requires a non-empty variable name",
+            ));
+        }
+        return std::env::var_os(name).ok_or_else(|| {
+            malformed(format!("SECRET_NOT_AVAILABLE: environment variable `{name}` (referenced by env `{key}`) is not set"))
+        });
+    }
+    Err(malformed(format!(
+        "env value for `{key}` must be a string or a `$secret` reference mapping"
+    )))
+}
+
 /// Dispatch one built-in step. Unknown adapters/actions are malformed input
 /// (the runner also rejects them earlier during capability preflight).
+fn process_dispatch(
+    action: &str,
+    payload: &BTreeMap<String, Value>,
+    ctx: &StepCtx<'_>,
+) -> StepResult<StepOutcome> {
+    let handle = payload_string(payload, "handle")
+        .ok_or_else(|| malformed(format!("process.{action} requires string `handle`")))?;
+    let mut registry = ctx
+        .processes
+        .ok_or_else(|| StepError::Io("process registry unavailable in this phase".into()))?
+        .borrow_mut();
+    match action {
+        "start" => registry.start(
+            &handle,
+            process_runtime::start_spec(payload, ctx.worktree)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "wait_ready" => registry.ready(
+            &handle,
+            process_runtime::parse_readiness(payload)?,
+            process_runtime::millis(payload, "timeout_ms", true)?,
+            ctx.deadline,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "write_stdin" => {
+            let (b, n, c) = process_runtime::write_data(payload)?;
+            registry.write(&handle, b, n, c, ctx.phase, ctx.step_index)
+        }
+        "observe" => registry.observe(&handle, ctx.phase, ctx.step_index),
+        "terminate" => registry.terminate(&handle, ctx.phase, ctx.step_index),
+        "kill" => registry.kill(
+            &handle,
+            process_runtime::millis(payload, "timeout_ms", false)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "wait" => registry.wait(
+            &handle,
+            process_runtime::millis(payload, "timeout_ms", true)?,
+            ctx.phase,
+            ctx.step_index,
+        ),
+        "restart" => registry.restart(&handle, ctx.phase, ctx.step_index),
+        _ => Err(malformed(format!("unknown process action `{action}`"))),
+    }
+}
+
 pub fn dispatch(
     adapter: &str,
     action: &str,
@@ -220,6 +328,7 @@ pub fn dispatch(
 ) -> StepResult<StepOutcome> {
     match (adapter, action) {
         ("command", "run") => command_run(payload, ctx),
+        ("process", action) => process_dispatch(action, payload, ctx),
         ("fs", "write") => fs_write(payload, ctx),
         ("fs", "mkdir") => fs_mkdir(payload, ctx),
         ("fs", "read") => fs_read(payload, ctx),
@@ -266,12 +375,11 @@ fn command_run(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResu
     if let Some(env) = payload.get("env") {
         let map = env
             .as_object()
-            .ok_or_else(|| malformed("command.run `env` must be a mapping of strings"))?;
+            .ok_or_else(|| malformed("command.run `env` must be a mapping"))?;
         for (k, v) in map {
-            let value = v
-                .as_str()
-                .ok_or_else(|| malformed(format!("env value for `{k}` must be a string")))?;
-            cmd.env.set.push((OsString::from(k), OsString::from(value)));
+            cmd.env
+                .set
+                .push((OsString::from(k), resolve_env_value(k, v)?));
         }
     }
     cmd.deadline = ctx.deadline;

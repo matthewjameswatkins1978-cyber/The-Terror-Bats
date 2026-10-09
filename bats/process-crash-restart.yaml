@@ -1,0 +1,58 @@
+version: terrorbat/v1
+id: process-crash-restart
+claim:
+  text: Restarting the worker resets its durable counter to one.
+requires: [process.start, process.readiness, process.kill, process.restart, process.observe]
+attack:
+  run:
+    - adapter: process
+      action: start
+      handle: worker
+      program:
+        $param: worker_program
+      args:
+        - -u
+        - -c
+        - $param: worker_code
+      cwd: .
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: GEN:1
+      timeout_ms: 5000
+    - adapter: process
+      action: kill
+      handle: worker
+      timeout_ms: 2000
+    - adapter: process
+      action: restart
+      handle: worker
+    - adapter: process
+      action: wait_ready
+      handle: worker
+      stdout_contains: GEN:2
+      timeout_ms: 5000
+    - adapter: process
+      action: observe
+      handle: worker
+    - adapter: process
+      action: kill
+      handle: worker
+      timeout_ms: 2000
+oracle:
+  all:
+    - type: text_contains
+      step: run:5
+      stream: stdout
+      substring: GEN:2
+params:
+  worker_program:
+    type: string
+    default: python
+  worker_code:
+    type: string
+    default: "import pathlib,time; p=pathlib.Path('tb-process-state.txt'); n=int(p.read_text()) if p.exists() else 0; p.write_text(str(n+1)); print('GEN:'+str(n+1),flush=True); time.sleep(60)"
+evidence:
+  capture: [stdout, stderr, git_status]
+timeout:
+  run: 20s

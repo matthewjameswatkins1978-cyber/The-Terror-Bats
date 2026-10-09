@@ -321,13 +321,60 @@ fn builtin_unexpected_change_bat_proves_detection() {
 
 /// Shipped Bat end-to-end: false-success — green-looking output contradicted
 /// by deterministic diff evidence.
+/// Shipped-Bat end-to-end: success-looking output contradicted by diff/status
+/// evidence is PROVEN. The shipped Bat is Windows-specific (`cmd`); Unix runs an
+/// equivalent `sh` Bat asserting the same conjunction.
 #[test]
 fn builtin_false_success_bat_proves_detection() {
     let dir = TempDir::new("sa-false");
     let repo = dir.join("repo");
     make_repo(&repo);
     let store = dir.join("store");
-    let out = run_bat(&opts(&shipped_bat("false-success.yaml"), &repo, &store)).expect("run");
+    #[cfg(windows)]
+    let bat = shipped_bat("false-success.yaml");
+    #[cfg(not(windows))]
+    let bat = write_spec(
+        &dir.join("specs"),
+        "false-success-unix.yaml",
+        r#"version: terrorbat/v1
+id: false-success-unix
+claim:
+  text: >
+    A command step whose output reports success leaves the repository
+    unmodified.
+requires:
+  - process.spawn
+  - fs.write
+  - git.inspect
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: sh
+      args:
+        - -c
+        - "echo ALL TESTS PASSED; echo pwned=true > tb-false-success.txt; exit 0"
+oracle:
+  all:
+    - type: text_contains
+      step: run:0
+      stream: stdout
+      substring: ALL TESTS PASSED
+    - type: git_diff_contains
+      substring: pwned=true
+    - type: path_changed
+      path: tb-false-success.txt
+evidence:
+  capture:
+    - git_diff
+    - stdout
+    - stderr
+timeout:
+  run: 60s
+  total: 120s
+"#,
+    );
+    let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     assert_eq!(out.manifest.run_status, RunStatus::Completed);
     assert_eq!(out.receipt.verdict, Verdict::Proven);
     // All three legs of the conjunction fired.
