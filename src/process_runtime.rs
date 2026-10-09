@@ -631,16 +631,33 @@ impl ProcessRegistry {
         let root_running = refresh(g)?;
         // Strike the OWNED GROUP, not just a live root: the root may have
         // exited while descendants remain in the group/Job. A failed strike
-        // against a live root is a genuine error; against a dead root with
-        // no members it is a harmless no-op.
-        if !strike_group(&mut g.running.child, g.report.pid, root_running) && root_running {
+        // is an error now — except a racy Unix ESRCH after root exit, which
+        // the quiet loop below verifies instead of misreporting. Success is
+        // never inferred from an unattempted strike.
+        let fatal = match strike_group(&mut g.running.child, g.report.pid, root_running) {
+            StrikeOutcome::Struck => {
+                if root_running || g.report.termination.is_none() {
+                    g.report.termination = Some("forced_kill_requested".into());
+                    event(&mut g.report, phase, index, "kill_requested", None)
+                }
+                false
+            }
+            StrikeOutcome::SkippedEmpty => root_running,
+            StrikeOutcome::Failed => {
+                #[cfg(unix)]
+                {
+                    root_running
+                }
+                #[cfg(not(unix))]
+                {
+                    true
+                }
+            }
+        };
+        if fatal {
             return Err(ioerr(format!(
-                "PROCESS_KILL_FAILED: `{name}` group termination refused"
+                "PROCESS_KILL_FAILED: `{name}` owned-group termination failed; group state unknown"
             )));
-        }
-        if root_running || g.report.termination.is_none() {
-            g.report.termination = Some("forced_kill_requested".into());
-            event(&mut g.report, phase, index, "kill_requested", None)
         }
         loop {
             if !refresh(g)? && group_is_quiet(g.report.pid) {
@@ -768,21 +785,41 @@ impl ProcessRegistry {
             }
             thread::sleep(POLL)
         }
+        // Identities whose owned group resisted forced termination with
+        // unknown occupancy (Windows: no membership enumeration). These
+        // must surface as survivors, never silent success.
+        let mut force_failed: Vec<String> = Vec::new();
         for (name, h) in &mut self.handles {
-            // Forced group/Job termination even for reaped roots: Unix is
-            // scan-gated inside strike_group, Windows TerminateJobObject is
-            // a safe no-op on an empty job.
+            // Forced group/Job termination for every generation not verified
+            // quiet: unknown occupancy (notably a reaped Windows root) is
+            // struck, never inferred empty.
             if let Some(g) = h.generations.last_mut() {
                 let running = refresh(g).unwrap_or(true);
-                if running || !group_is_quiet(g.report.pid) {
-                    if strike_group(&mut g.running.child, g.report.pid, running) {
-                        self.cleanup.forced.push(g.report.process_identity.clone());
-                        g.report.termination = Some("cleanup_forced_kill_requested".into());
-                        event(&mut g.report, "cleanup", 0, "force_kill", None)
-                    } else if running {
-                        self.cleanup
-                            .errors
-                            .push(format!("{}: kill failed", g.report.process_identity))
+                // Generations already terminated through this machinery
+                // (explicit kill or a prior cleanup) are not re-struck: the
+                // group boundary was already reached and relabelling their
+                // outcome would rewrite receipt history.
+                let already_terminated = g
+                    .report
+                    .termination
+                    .as_deref()
+                    .is_some_and(|s| ["killed", "cleanup_terminated"].contains(&s));
+                if !already_terminated && !group_verified_quiet(g.report.pid, running) {
+                    match strike_group(&mut g.running.child, g.report.pid, running) {
+                        StrikeOutcome::Struck => {
+                            self.cleanup.forced.push(g.report.process_identity.clone());
+                            g.report.termination = Some("cleanup_forced_kill_requested".into());
+                            event(&mut g.report, "cleanup", 0, "force_kill", None)
+                        }
+                        StrikeOutcome::Failed => {
+                            force_failed.push(g.report.process_identity.clone());
+                            if running {
+                                self.cleanup
+                                    .errors
+                                    .push(format!("{}: kill failed", g.report.process_identity))
+                            }
+                        }
+                        StrikeOutcome::SkippedEmpty => {}
                     }
                 }
             }
@@ -801,9 +838,17 @@ impl ProcessRegistry {
         for (name, h) in &mut self.handles {
             if let Some(g) = h.generations.last_mut() {
                 // A reaped root with live owned members is a survivor, not a
-                // success: Unix verifies via scan, elsewhere root state plus
-                // the applied Job termination is all the mechanism offers.
-                if refresh(g).unwrap_or(true) || !group_is_quiet(g.report.pid) {
+                // success. Unix verifies via scan; Windows consults the
+                // recorded strike outcome because membership is unknown:
+                // root-running, failed-strike, or (Unix) scan-noisy groups
+                // survive, applied-and-quiet groups terminate.
+                let running = refresh(g).unwrap_or(true);
+                #[cfg(unix)]
+                let incomplete = running || !group_is_quiet(g.report.pid);
+                #[cfg(not(unix))]
+                let incomplete =
+                    running || force_failed.iter().any(|s| s == &g.report.process_identity);
+                if incomplete {
                     self.cleanup
                         .survivors
                         .push(g.report.process_identity.clone());
@@ -1129,35 +1174,62 @@ fn scan_group_members(pgid: u32, live_only: bool) -> Vec<u32> {
     out
 }
 
+/// Outcome of an owned-group/Job termination attempt. `SkippedEmpty` means
+/// no signal was issued because the group verified empty; `Failed` means a
+/// signal was attempted but refused. Unknown occupancy is never quiet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StrikeOutcome {
+    Struck,
+    /// Unix only: the scan proved the group empty, so no signal issued.
+    /// Windows never skips — unknown membership is struck, not inferred.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    SkippedEmpty,
+    Failed,
+}
 /// Attempt owned-group/Job termination regardless of root state. A reaped
 /// root does not imply an empty group: live members keep pipes open and
 /// must be struck through the group boundary, not the dead root.
-/// Returns true when a termination signal was actually issued.
-fn strike_group(child: &mut GroupChild, root_pid: Option<u32>, root_running: bool) -> bool {
+fn strike_group(
+    child: &mut GroupChild,
+    root_pid: Option<u32>,
+    root_running: bool,
+) -> StrikeOutcome {
     #[cfg(unix)]
     {
-        let Some(pgid) = root_pid else {
-            return false;
-        };
-        // Scan-gated killpg: signalling a bare pgid after full group death
-        // could hit a reused id. Only strike when the root still runs or
-        // the scan proves live members remain.
-        if !root_running && owned_group_live_members(pgid).is_empty() {
-            return false;
+        if let Some(pgid) = root_pid {
+            if !root_running && owned_group_live_members(pgid).is_empty() {
+                return StrikeOutcome::SkippedEmpty;
+            }
+        } else if !root_running {
+            return StrikeOutcome::SkippedEmpty;
         }
-        // GroupChild::kill issues killpg(SIGKILL): the whole owned group,
-        // or ESRCH when the last member vanished in the race window.
-        child.kill().is_ok()
+        // Root runs (the group is occupied by the root itself; the child's
+        // internal pgid is valid) or the scan proved live members remain:
+        // killpg the owned group. ESRCH in the race window reports Failed
+        // and the caller's quiet check arbitrates.
+        if child.kill().is_ok() {
+            StrikeOutcome::Struck
+        } else {
+            StrikeOutcome::Failed
+        }
     }
     #[cfg(not(unix))]
     {
         let _ = (root_pid, root_running);
         // TerminateJobObject on an empty job is a harmless no-op, so always
         // attempt: the handle stays valid after root exit and reaches live
-        // job members the root-state check cannot see.
-        child.kill().is_ok()
+        // job members the root-state check cannot see. Any failure is real
+        // (never a benign empty-group race) and must surface, never silence.
+        if child.kill().is_ok() {
+            StrikeOutcome::Struck
+        } else {
+            StrikeOutcome::Failed
+        }
     }
 }
+/// True only when the owned group is VERIFIED to hold no live members.
+/// Unix verifies via zombie-filtered scan; Windows cannot enumerate Job
+/// membership, so unknown occupancy is never verified-quiet there.
 /// True when no owned-group activity remains to terminate. Unix verifies via
 /// a zombie-filtered scan; elsewhere only the root state is observable.
 fn group_is_quiet(root_pid: Option<u32>) -> bool {
@@ -1172,6 +1244,24 @@ fn group_is_quiet(root_pid: Option<u32>) -> bool {
     {
         let _ = root_pid;
         true
+    }
+}
+/// True only when the owned group is VERIFIED to hold no live members:
+/// root reaped plus (Unix) an empty zombie-filtered scan. Windows Job
+/// membership cannot be enumerated, so a reaped root there never counts
+/// as verified-quiet — unknown occupancy must still be struck.
+fn group_verified_quiet(root_pid: Option<u32>, root_running: bool) -> bool {
+    if root_running {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        group_is_quiet(root_pid)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root_pid;
+        false
     }
 }
 /// Harvest a finished drain thread without blocking. Unfinished handles stay

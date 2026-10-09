@@ -1211,3 +1211,67 @@ fn process_kill_reaps_group_whose_root_already_exited() {
     .expect("kill succeeds");
     assert!(poll_port(port, false), "kill must reap the surviving heir");
 }
+
+fn cleanup_reaps_heir(mode: &str, temp_tag: &str) {
+    // Shared automatic-cleanup regression: root exits at once, the owned
+    // heir stays alive, and NOBODY calls process.kill — cleanup() alone
+    // must terminate the group. Socket proof before AND after.
+    let temp = TempDir::new(temp_tag);
+    let registry = RefCell::new(ProcessRegistry::new("heir-cleanup-execution"));
+    let port = reserve_port();
+    let port_arg = port.to_string();
+    start(
+        &registry,
+        &temp.path,
+        "cleanup-parent",
+        &[mode, &port_arg, "30"],
+        None,
+    );
+    let _guard = HeirGuard {
+        registry: &registry,
+        port,
+    };
+    let waited = invoke(
+        &registry,
+        &temp.path,
+        "wait",
+        json!({"handle":"cleanup-parent","timeout_ms":5000}),
+        1,
+    )
+    .expect("wait returns");
+    use terrorbat::supervisor::ExecutionStatus;
+    assert_eq!(waited.status, ExecutionStatus::Completed);
+    // Precondition: automatic cleanup faces a live owned heir, root dead.
+    assert!(poll_port(port, true), "heir must be alive before cleanup");
+    let report = registry.borrow_mut().cleanup().clone();
+    assert!(
+        report.survivors.is_empty(),
+        "no survivors allowed, saw {:?}",
+        report.survivors
+    );
+    assert!(
+        report
+            .terminated
+            .iter()
+            .any(|t| t.contains("cleanup-parent")),
+        "cleanup must record the termination"
+    );
+    let obs = report
+        .descendants
+        .iter()
+        .find(|o| o.handle == "cleanup-parent")
+        .expect("observation");
+    assert_eq!(obs.cleanup_outcome, "root-terminated");
+    drop(report);
+    assert!(poll_port(port, false), "cleanup must reap the live heir");
+}
+
+#[test]
+fn process_cleanup_reaps_pipe_holding_heir_after_root_exit() {
+    cleanup_reaps_heir("pipe-heir", "process-cleanup-pipes");
+}
+
+#[test]
+fn process_cleanup_reaps_null_stdio_heir_after_root_exit() {
+    cleanup_reaps_heir("null-heir", "process-cleanup-null");
+}
