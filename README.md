@@ -1,23 +1,78 @@
 # The Terror Bats Framework
 
-The Terror Bats Framework is a language-agnostic falsification and assurance framework. It attempts to **disprove claims** about systems, isolates the attack, records what happened, and produces reproducible evidence. It orchestrates existing machinery (test runners, fuzzers, static analysis, Git) around a single pipeline: claim → attack → execution → oracle → evidence → receipt. It does not replace Cargo test, pytest, Playwright, or any other testing system.
+Language-agnostic adversarial falsification with deterministic evidence.
 
-> **What could still be wrong while all the ordinary tests are green?**
+> What could still be wrong while all the ordinary tests are green?
 
-> **Imagine with AI. Attack deliberately. Prove mechanically. Preserve the evidence.**
+Windows • Linux • Rust • No AI required for execution
 
-## Current status
+## Install
 
-**First Flight + M8 external adapters.** The core pipeline runs on Windows: Bat Spec identity (M1/M1.1/M1.2), M2 process-tree supervision, disposable worktree runs, durable evidence, deterministic oracles, receipts/replay, Packs and serial Campaigns. M8 adds the language-neutral `terrorbat-adapter/v1` stdio protocol; see the [external adapter guide](docs/external-adapter-v1.md). Start with the [First Flight guide](docs/first-flight.md). Terror Bats requires no cloud, model, Docker, Python, or Node for its built-ins. Evidence reuse/caching and AI discovery remain future work.
+```powershell
+cargo build --release --bin terrorbats
+.\install\install.ps1 -InstallDir "$HOME\bin"
+```
+
+## First Bat
+
+```text
+terrorbats run bats/command-exit.yaml --repo D:\some-project
+```
+
+On a healthy machine: `Completed` / `NOT OBSERVED` — the attack did not
+falsify the claim (not a correctness certificate).
+
+## Receipt example
+
+```text
+terrorbats run bats/command-exit.yaml --repo D:\some-project --json
+terrorbats replay <receipt:sha256:...> --store <path>
+```
+
+Every run ends in one verdict: `PROVEN`, `REPRODUCED`, `SUSPECTED`,
+`NOT OBSERVED`, `INCONCLUSIVE`, `INVALID`, or `INFRASTRUCTURE ERROR`.
+The receipt is immutable; replay repeats the attack with fresh OS
+identities.
+
+## Manual
+
+The canonical guide: [`docs/MANUAL.md`](docs/MANUAL.md). Five-minute
+version: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+
+## Adapters
+
+Built-in: `command`, `filesystem`, `git`, stateful `process`
+(partial), plus compositions (`stdio`, `json`, `test-runner`,
+`database`, `snapshot`) and the external JSONL protocol:
+
+```text
+terrorbats adapters
+terrorbats adapter inspect process
+```
+
+## Limitations
+
+- Disposable worktrees are **not** hostile-code containment.
+- Captured child output is byte-verbatim — a target that prints its
+  secret discloses it into evidence. No automatic redaction.
+- Escaped/out-of-group descendants unsupported; `process` stays
+  `builtin-partial`.
+- `http`/`tcp` have no native builtins yet (use `curl`/explicit clients).
+- This is 0.2.0-rc.1 for serious evaluation — not certification, not a
+  sandbox, not formally verified.
 
 ## Documents
 
-- [First Flight guide](docs/first-flight.md) — install, run, inspect, replay, Bat authoring, exit codes, limitations
-- [Architecture](docs/architecture.md) — pipeline, supervision, isolation, adapters, AI boundary
-- [External adapter protocol v1](docs/external-adapter-v1.md) — bindings, describe/execute messages, capabilities, provenance, and replay
+- [Manual](docs/MANUAL.md) — the canonical long-form guide
+- [Quickstart](docs/QUICKSTART.md) — five minutes to first receipt
+- [First Flight guide](docs/first-flight.md) — install, run, inspect, replay
+- [Architecture](docs/architecture.md) — pipeline, supervision, isolation
 - [Bat Spec v0](docs/bat-spec-v0.md) — the declarative Bat model
-- [Receipt v0](docs/receipt-v0.md) — epistemic states and the primary human-facing output
+- [Receipt v0](docs/receipt-v0.md) — verdicts and the human-facing output
 - [Capability model](docs/capability-model.md) — declared vs enforced effects
-- [Reusery Bat Zero](docs/reusery-bat-zero.md) — the first real specimen, and how it validates Terror Bats itself
+- [Changelog](CHANGELOG.md) — user-visible release history
+- [Security](SECURITY.md) — what runs with your authority, and how to report
 
-Roadmap, kill criteria, and M1 entry criteria are in [architecture.md](docs/architecture.md).
+## License
+
+MIT OR Apache-2.0 — see `LICENSE-MIT` and `LICENSE-APACHE`.

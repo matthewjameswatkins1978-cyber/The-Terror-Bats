@@ -102,6 +102,30 @@ fn manual_first_flight_loop_runs_end_to_end() {
 }
 
 #[test]
+fn documented_readonly_commands_execute() {
+    // README, QUICKSTART, MANUAL and first-flight show only these plus
+    // the First Flight loop above: every one must execute successfully.
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bat = manifest.join("bats").join("command-exit.yaml");
+    let pack = manifest.join("packs").join("first-flight.yaml");
+    let cases: Vec<Vec<String>> = vec![
+        vec!["--help".into()],
+        vec!["spec".into(), "check".into(), bat.to_string_lossy().into()],
+        vec!["spec".into(), "id".into(), bat.to_string_lossy().into()],
+        vec!["pack".into(), "check".into(), pack.to_string_lossy().into()],
+        vec!["adapters".into()],
+        vec!["adapter".into(), "inspect".into(), "process".into()],
+        vec!["adapter".into(), "inspect".into(), "command".into()],
+    ];
+    for args in &cases {
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (code, stdout) = run(&refs);
+        assert_eq!(code, 0, "`{args:?}` must exit 0");
+        assert!(!stdout.is_empty(), "`{args:?}` must print something");
+    }
+}
+
+#[test]
 fn completions_cover_required_shells() {
     for shell in ["powershell", "bash", "zsh", "fish"] {
         let (code, stdout) = run(&["completions", shell]);
