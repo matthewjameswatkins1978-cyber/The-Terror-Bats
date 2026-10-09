@@ -1,6 +1,6 @@
 # The Terror Bats Framework Architecture (M0)
 
-Status: architectural contract only. No implementation exists. Planned implementation language: Rust.
+Status: implemented in Rust through 0.2.0-rc.1 (M1–M8 plus stateful process runtime). This document remains the architectural contract; where it says "planned" or "future work", that is a real gap, not a stale label.
 
 ## 1. Core pipeline
 

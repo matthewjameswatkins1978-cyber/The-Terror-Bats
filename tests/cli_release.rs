@@ -2,6 +2,10 @@
 //! required shells, the generated man page, the exact version string, and
 //! a machine-readable doctor report. All surfaces derive from the live
 //! Clap definition — never hand-maintained copies.
+//!
+//! The docs smoke test executes the manual's First Flight loop
+//! (run → inspect → evidence → replay) through the real binary so the
+//! documented commands cannot become fan fiction.
 
 use std::process::Command;
 
@@ -13,6 +17,88 @@ fn run(args: &[&str]) -> (i32, String) {
     let output = cli().args(args).output().expect("terrorbats binary runs");
     let code = output.status.code().unwrap_or(-1);
     (code, String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn repo_with_commit(root: &std::path::Path) -> std::path::PathBuf {
+    let repo = root.join("target");
+    std::fs::create_dir_all(&repo).expect("repo dir");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .expect("git runs");
+        assert!(status.success(), "git {args:?} must succeed");
+    };
+    git(&["init"]);
+    git(&["config", "user.email", "smoke@test.local"]);
+    git(&["config", "user.name", "Smoke"]);
+    git(&["commit", "--allow-empty", "-m", "smoke"]);
+    repo
+}
+
+#[test]
+fn manual_first_flight_loop_runs_end_to_end() {
+    // Every command in docs/MANUAL.md §5/§17–§19, executed for real.
+    let root = std::env::temp_dir().join(format!("terrorbats-smoke-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("smoke dir");
+    let repo = repo_with_commit(&root);
+    let store = root.join("store");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bat = manifest.join("bats").join("command-exit.yaml");
+    // run
+    let run_out = cli()
+        .arg("run")
+        .arg(&bat)
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--store")
+        .arg(&store)
+        .arg("--json")
+        .output()
+        .expect("run executes");
+    assert!(run_out.status.success(), "first flight run must succeed");
+    let receipt: serde_json::Value = serde_json::from_slice(&run_out.stdout).expect("receipt JSON");
+    assert_eq!(receipt["verdict"].as_str(), Some("NOT OBSERVED"));
+    let id = receipt["receipt_id"]
+        .as_str()
+        .expect("receipt id")
+        .to_string();
+    // inspect
+    let inspect = cli()
+        .arg("inspect")
+        .arg(&id)
+        .arg("--store")
+        .arg(&store)
+        .output()
+        .expect("inspect executes");
+    assert!(inspect.status.success(), "inspect must succeed");
+    // evidence show, from the first step's stdout reference
+    let stdout_ref = receipt["execution"]["steps"][0]["stdout"]
+        .as_str()
+        .expect("stdout evidence ref")
+        .to_string();
+    let evidence = cli()
+        .arg("evidence")
+        .arg("show")
+        .arg(&stdout_ref)
+        .arg("--store")
+        .arg(&store)
+        .output()
+        .expect("evidence show executes");
+    assert!(evidence.status.success(), "evidence show must succeed");
+    assert!(!evidence.stdout.is_empty(), "evidence must print bytes");
+    // replay
+    let replay = cli()
+        .arg("replay")
+        .arg(&id)
+        .arg("--store")
+        .arg(&store)
+        .output()
+        .expect("replay executes");
+    assert!(replay.status.success(), "replay must succeed");
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
