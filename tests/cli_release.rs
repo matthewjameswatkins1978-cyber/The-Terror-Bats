@@ -21,11 +21,15 @@ fn run(args: &[&str]) -> (i32, String) {
 
 fn repo_with_commit(root: &std::path::Path) -> std::path::PathBuf {
     let repo = root.join("target");
-    std::fs::create_dir_all(&repo).expect("repo dir");
+    init_repo(&repo)
+}
+
+fn init_repo(repo: &std::path::Path) -> std::path::PathBuf {
+    std::fs::create_dir_all(repo).expect("repo dir");
     let git = |args: &[&str]| {
         let status = Command::new("git")
             .args(args)
-            .current_dir(&repo)
+            .current_dir(repo)
             .status()
             .expect("git runs");
         assert!(status.success(), "git {args:?} must succeed");
@@ -34,7 +38,7 @@ fn repo_with_commit(root: &std::path::Path) -> std::path::PathBuf {
     git(&["config", "user.email", "smoke@test.local"]);
     git(&["config", "user.name", "Smoke"]);
     git(&["commit", "--allow-empty", "-m", "smoke"]);
-    repo
+    repo.to_path_buf()
 }
 
 #[test]
@@ -59,6 +63,25 @@ fn manual_first_flight_loop_runs_end_to_end() {
         .output()
         .expect("run executes");
     assert!(run_out.status.success(), "first flight run must succeed");
+    // JSON contract: machine output carries no ANSI, no sigils.
+    assert!(
+        !run_out.stdout.contains(&0x1b),
+        "receipt JSON must be ANSI-free"
+    );
+    let trimmed: Vec<u8> = run_out
+        .stdout
+        .iter()
+        .cloned()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect();
+    assert!(
+        trimmed.first() == Some(&b'{'),
+        "receipt JSON must start with an object"
+    );
+    assert!(
+        !String::from_utf8_lossy(&run_out.stdout).contains("\\^v^/"),
+        "receipt JSON must not embed sigils"
+    );
     let receipt: serde_json::Value = serde_json::from_slice(&run_out.stdout).expect("receipt JSON");
     assert_eq!(receipt["verdict"].as_str(), Some("NOT OBSERVED"));
     let id = receipt["receipt_id"]
@@ -98,6 +121,40 @@ fn manual_first_flight_loop_runs_end_to_end() {
         .output()
         .expect("replay executes");
     assert!(replay.status.success(), "replay must succeed");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn path_torture_repo_with_spaces_unicode_and_nesting() {
+    // Acceptance: repository paths with spaces, Unicode, and deep nesting
+    // must work without OS-syntax confusion (Windows drive letters,
+    // backslashes; Linux ordinary backslash filenames).
+    let root = std::env::temp_dir().join(format!("terrorbats-torture-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let repo = root
+        .join("dir with spaces")
+        .join("ünïcode-болот")
+        .join("a")
+        .join("b")
+        .join("c")
+        .join("target");
+    init_repo(&repo);
+    let store = root.join("store");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bat = manifest.join("bats").join("command-exit.yaml");
+    let out = cli()
+        .arg("run")
+        .arg(&bat)
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--store")
+        .arg(&store)
+        .arg("--json")
+        .output()
+        .expect("torture run executes");
+    assert!(out.status.success(), "run in tortured path must succeed");
+    let receipt: serde_json::Value = serde_json::from_slice(&out.stdout).expect("receipt JSON");
+    assert_eq!(receipt["verdict"].as_str(), Some("NOT OBSERVED"));
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -171,6 +228,10 @@ fn version_output_is_exact() {
 fn doctor_json_reports_required_sections() {
     let (code, stdout) = run(&["doctor", "--json"]);
     assert_eq!(code, 0, "doctor must be healthy on a dev/CI machine");
+    assert!(
+        !stdout.bytes().any(|b| b == 0x1b),
+        "doctor JSON must be ANSI-free"
+    );
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("doctor --json must be JSON");
     for key in [

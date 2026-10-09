@@ -359,10 +359,10 @@ pub fn document_receipt(r: &Receipt, caps: &Capabilities) -> Document {
 pub fn document_doctor(rep: &DoctorReport, caps: &Capabilities) -> Document {
     let mut doc = Document::new();
     doc = doc.push(Block::Details {
-        text: title_text("TERROR BAT DOCTOR", caps.width),
+        text: title_text("TERROR BATS DOCTOR", caps.width),
     });
     doc = doc.push(Block::Title {
-        text: "TERROR BAT DOCTOR".to_string(),
+        text: "TERROR BATS DOCTOR".to_string(),
         version: Some(TERRORBAT_VERSION.to_string()),
     });
 
@@ -423,10 +423,10 @@ pub fn document_doctor(rep: &DoctorReport, caps: &Capabilities) -> Document {
 pub fn document_replay(report: &ReplayReport, caps: &Capabilities) -> Document {
     let mut doc = Document::new();
     doc = doc.push(Block::Details {
-        text: title_text("TERROR BAT REPLAY", caps.width),
+        text: title_text("TERROR BATS REPLAY", caps.width),
     });
     doc = doc.push(Block::Title {
-        text: "TERROR BAT REPLAY".to_string(),
+        text: "TERROR BATS REPLAY".to_string(),
         version: None,
     });
     let yn = |same: bool| {
