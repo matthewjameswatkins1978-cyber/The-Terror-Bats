@@ -1,4 +1,4 @@
-//! `terrorbat doctor` (W1): honest health checks for the Windows first-class
+//! `terrorbats doctor` (W1): honest health checks for the Windows first-class
 //! target. Never inspects secrets, never sends telemetry, never fails
 //! because optional tools are missing.
 

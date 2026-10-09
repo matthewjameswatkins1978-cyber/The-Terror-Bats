@@ -54,12 +54,12 @@ conditions (this repo, this commit, this machine, this version).
 Specs: [`batzero/`](../batzero) in this repository — rerunnable by anyone:
 
 ```powershell
-terrorbat run batzero\bz1-benchmark-evidence-absent.yaml --repo <reusery.dev clone>
+terrorbats run batzero\bz1-benchmark-evidence-absent.yaml --repo <reusery.dev clone>
 ```
 
 ### Replay proof (BZ-1)
 
-`terrorbat replay receipt:sha256:dddd6e2a…` → new execution
+`terrorbats replay receipt:sha256:dddd6e2a…` → new execution
 `d95f6279-2881-4753-81b5-1328357ef6a7`, new receipt
 `receipt:sha256:657291213881d7230c86d58a7878a1874b2c8ecb2588850fdef569f275dc6d27`;
 execution status / oracle result / verdict **same**; `base_snapshot`,

@@ -7,9 +7,9 @@ Terror Bat invokes an external adapter as a supervised, one-shot process. The Ba
 Supply a local bindings file explicitly to each command that can execute a Bat:
 
 ```powershell
-terrorbat run bat.yaml --repo D:\Target --adapters adapters.yaml
-terrorbat pack run pack.yaml --repo D:\Target --adapters adapters.yaml
-terrorbat replay <receipt> --adapters adapters.yaml
+terrorbats run bat.yaml --repo D:\Target --adapters adapters.yaml
+terrorbats pack run pack.yaml --repo D:\Target --adapters adapters.yaml
+terrorbats replay <receipt> --adapters adapters.yaml
 ```
 
 Schema version: `terrorbat-adapters/v1`.

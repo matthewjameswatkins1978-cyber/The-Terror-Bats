@@ -89,10 +89,10 @@ key. Modified bridge intents are covered by the real tampered-replay contract.
 Copy the example bindings, replace all placeholder paths/revisions, then:
 
 ```powershell
-terrorbat run bats/lantern/same-key-race.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
-terrorbat replay RECEIPT_ID --adapters adapters.yaml --store EVIDENCE --json
-terrorbat pack run packs/lantern-hostile.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
-terrorbat pack run packs/lantern-stress.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats run bats/lantern/same-key-race.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats replay RECEIPT_ID --adapters adapters.yaml --store EVIDENCE --json
+terrorbats pack run packs/lantern-hostile.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats pack run packs/lantern-stress.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
 python -B -m unittest discover -s adapters/lantern -p test_checker.py -v
 ```
 

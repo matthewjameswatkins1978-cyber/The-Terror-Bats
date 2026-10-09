@@ -1,8 +1,8 @@
 [package]
-name = "terrorbat"
-version = "0.1.0"
+name = "terrorbats"
+version = "0.2.0-rc.1"
 edition = "2024"
-description = "Terror Bat — reproducible falsification experiments with evidence and receipts"
+description = "The Terror Bats Framework — reproducible falsification experiments with evidence and receipts"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats"
 

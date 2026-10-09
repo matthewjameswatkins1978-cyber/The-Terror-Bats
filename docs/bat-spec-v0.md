@@ -364,7 +364,7 @@ integer
 
 No float parameter type.
 
-The projection is serialised to **RFC 8785 canonical JSON** (inspectable via `terrorbat spec canonical`) and hashed with **SHA-256**, producing identities of the form `<kind>:sha256:<lowercase hex>`:
+The projection is serialised to **RFC 8785 canonical JSON** (inspectable via `terrorbats spec canonical`) and hashed with **SHA-256**, producing identities of the form `<kind>:sha256:<lowercase hex>`:
 
 ```text
 bat:sha256:...

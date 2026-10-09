@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::TempDir;
-use terrorbat::builtins::{StepCtx, StepError, dispatch, resolve_in_worktree};
+use terrorbats::builtins::{StepCtx, StepError, dispatch, resolve_in_worktree};
 
 fn ctx<'a>(worktree: &'a Path, spec_dir: &'a Path) -> StepCtx<'a> {
     StepCtx {

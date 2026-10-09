@@ -9,9 +9,9 @@
 #   (--param probe_program=<path>\target\debug\tb_probe_tree.exe).
 # - bats/example.yaml needs a target-local dependency-shadow fixture.
 #
-# Validate: terrorbat pack check packs/first-flight.yaml
-# Identify: terrorbat pack id packs/first-flight.yaml
-# Campaign: terrorbat pack run packs/first-flight.yaml --repo <clean-repo>
+# Validate: terrorbats pack check packs/first-flight.yaml
+# Identify: terrorbats pack id packs/first-flight.yaml
+# Campaign: terrorbats pack run packs/first-flight.yaml --repo <clean-repo>
 
 version: terrorbat-pack/v1
 

@@ -519,7 +519,7 @@ pub fn all() -> Vec<AdapterInfo> {
                 "cargo test, pytest, unittest, npm/pnpm test, jest, vitest, go test, dotnet test, Maven, Gradle (see docs/universal-adapters.md)",
             ],
             &[
-                "Runner availability is environment reality (see `terrorbat doctor` optional tools); missing runners are InfrastructureError, never findings.",
+                "Runner availability is environment reality (see `terrorbats doctor` optional tools); missing runners are InfrastructureError, never findings.",
             ],
         ),
         adapter(
@@ -604,7 +604,7 @@ pub fn all() -> Vec<AdapterInfo> {
                     "description-id provenance",
                 ],
                 "per-adapter requires + process.spawn",
-                "terrorbat run bat.yaml --repo . --adapters adapters.yaml",
+                "terrorbats run bat.yaml --repo . --adapters adapters.yaml",
             )],
             &["process.spawn"],
             &[

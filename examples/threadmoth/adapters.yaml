@@ -5,8 +5,8 @@
 # execute process runs with the disposable worktree as its cwd. So both paths
 # below must be ABSOLUTE (or bare PATH names). Replace the tokens, then run:
 #
-#   terrorbat pack check packs/threadmoth-hostile.yaml
-#   terrorbat pack run packs/threadmoth-hostile.yaml --repo <clean-target> \
+#   terrorbats pack check packs/threadmoth-hostile.yaml
+#   terrorbats pack run packs/threadmoth-hostile.yaml --repo <clean-target> \
 #       --adapters <your-copy-of-this-file>
 version: terrorbat-adapters/v1
 adapters:

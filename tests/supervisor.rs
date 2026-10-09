@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use terrorbat::supervisor::{
+use terrorbats::supervisor::{
     CancelToken, CapturedStream, ExecutionStatus, StdinPolicy, SupervisedCommand,
 };
 
@@ -43,8 +43,8 @@ fn probe_cmd(name: &str) -> SupervisedCommand {
     SupervisedCommand::new(program)
 }
 
-fn run(cmd: &SupervisedCommand) -> terrorbat::supervisor::SupervisedOutcome {
-    terrorbat::supervisor::run(cmd, &CancelToken::new())
+fn run(cmd: &SupervisedCommand) -> terrorbats::supervisor::SupervisedOutcome {
+    terrorbats::supervisor::run(cmd, &CancelToken::new())
 }
 
 fn heartbeat_path(tag: &str) -> PathBuf {
@@ -252,7 +252,7 @@ fn cancel_during_run_terminates_tree() {
     let canceller = cancel.clone();
     // Run the supervisor on a thread; cancel only after the tree has proven
     // it is alive (heartbeat file non-empty). No fixed sleep, no race.
-    let handle = std::thread::spawn(move || terrorbat::supervisor::run(&cmd, &canceller));
+    let handle = std::thread::spawn(move || terrorbats::supervisor::run(&cmd, &canceller));
     let start = Instant::now();
     loop {
         let alive = std::fs::metadata(&hb).map(|m| m.len() > 0).unwrap_or(false);
@@ -282,7 +282,7 @@ fn pre_cancelled_token_spawns_nothing() {
     let cancel = CancelToken::new();
     cancel.cancel();
     let start = Instant::now();
-    let out = terrorbat::supervisor::run(&cmd, &cancel);
+    let out = terrorbats::supervisor::run(&cmd, &cancel);
     assert_eq!(out.status, ExecutionStatus::Cancelled);
     assert!(start.elapsed() < Duration::from_secs(5));
 }

@@ -380,9 +380,9 @@ fn replay_command(receipt: &Receipt, id: &str) -> String {
             .iter()
             .any(|step| step.adapter_provenance.is_some());
     if has_external {
-        format!("terrorbat replay {id} --adapters adapters.yaml")
+        format!("terrorbats replay {id} --adapters adapters.yaml")
     } else {
-        format!("terrorbat replay {id}")
+        format!("terrorbats replay {id}")
     }
 }
 

@@ -53,22 +53,22 @@ synthetic defect for a Threadmoth finding.
 
 ```powershell
 # validate the pack and every effective Bat
-terrorbat pack check packs/threadmoth-hostile.yaml
+terrorbats pack check packs/threadmoth-hostile.yaml
 
 # run the fifteen hostile Bats against a disposable target
 Copy-Item examples/threadmoth/adapters.yaml $env:TEMP\tm-adapters.yaml
 # (edit the two absolute paths inside first)
-terrorbat pack run packs/threadmoth-hostile.yaml --repo D:\CleanTarget `
+terrorbats pack run packs/threadmoth-hostile.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml
 
 # repeat the four deterministic attacks ten times (forty ordinary children)
-terrorbat pack run packs/threadmoth-stress.yaml --repo D:\CleanTarget `
+terrorbats pack run packs/threadmoth-stress.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml --runs 10
 
 # single Bat / replay (receipts are first-class ordinary runs)
-terrorbat run bats/threadmoth/stale-preview.yaml --repo D:\CleanTarget `
+terrorbats run bats/threadmoth/stale-preview.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml --json
-terrorbat replay <receipt> --adapters $env:TEMP\tm-adapters.yaml
+terrorbats replay <receipt> --adapters $env:TEMP\tm-adapters.yaml
 ```
 
 The hostile pack operates against disposable fixture worktrees only. The

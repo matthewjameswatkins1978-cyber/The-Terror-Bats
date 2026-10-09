@@ -627,8 +627,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "terrorbat"
-version = "0.1.0"
+name = "terrorbats"
+version = "0.2.0-rc.1"
 dependencies = [
  "anstyle",
  "clap",

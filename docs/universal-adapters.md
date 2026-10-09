@@ -4,7 +4,7 @@ The normal first question is: **"Can one of the universal adapters already
 reach this thing?"** A specialist adapter is the exception, not the rule.
 
 ```powershell
-terrorbat adapters
+terrorbats adapters
 terrorbat adapter inspect filesystem
 terrorbat adapter inspect http --json
 ```

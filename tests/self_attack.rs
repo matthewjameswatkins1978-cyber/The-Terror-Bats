@@ -21,9 +21,9 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{TempDir, git, make_repo, repo_is_clean, write_spec, yaml_path};
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::receipt::Verdict;
-use terrorbat::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::receipt::Verdict;
+use terrorbats::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
 
 fn opts(bat: &Path, repo: &Path, store: &Path) -> RunOptions {
     RunOptions {
@@ -52,8 +52,8 @@ fn shipped_bat(name: &str) -> PathBuf {
 /// Invariant 1: a normal (even mutating) Bat run never touches the source
 /// working tree — all mutation happens in the disposable worktree.
 /// Single human presentation path for honesty assertions.
-fn present(r: &terrorbat::receipt::Receipt) -> String {
-    terrorbat::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
+fn present(r: &terrorbats::receipt::Receipt) -> String {
+    terrorbats::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
 }
 
 #[test]
@@ -383,7 +383,7 @@ timeout:
         .oracle
         .conditions
         .iter()
-        .filter(|c| c.result == terrorbat::oracle::OracleResult::Falsified)
+        .filter(|c| c.result == terrorbats::oracle::OracleResult::Falsified)
         .count();
     assert_eq!(fired, 3, "{:?}", out.receipt.oracle.conditions);
 }
@@ -447,11 +447,11 @@ fn tampered_receipt_cannot_be_inspected_or_replayed() {
     // Every trusted path fails closed.
     let s = EvidenceStore::open(&store).expect("store");
     let loc =
-        terrorbat::receipt::locate_run(&s, &rid).expect_err("inspect lookup must fail closed");
+        terrorbats::receipt::locate_run(&s, &rid).expect_err("inspect lookup must fail closed");
     assert!(loc.to_string().contains("TB-RECEIPT-CORRUPT"), "{loc}");
-    let load = terrorbat::receipt::load_receipt(&out.run_dir).expect_err("load must fail closed");
+    let load = terrorbats::receipt::load_receipt(&out.run_dir).expect_err("load must fail closed");
     assert!(load.to_string().contains("TB-RECEIPT-CORRUPT"), "{load}");
-    let rep =
-        terrorbat::receipt::replay(&rid, Some(store.clone())).expect_err("replay must fail closed");
+    let rep = terrorbats::receipt::replay(&rid, Some(store.clone()))
+        .expect_err("replay must fail closed");
     assert!(rep.to_string().contains("TB-RECEIPT-CORRUPT"), "{rep}");
 }

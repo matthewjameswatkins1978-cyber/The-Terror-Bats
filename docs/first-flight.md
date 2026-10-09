@@ -34,17 +34,17 @@ CLAIM → ATTACK → EXECUTION → ORACLE → EVIDENCE → RECEIPT
 The release artifact is a single executable:
 
 ```powershell
-cargo build --release --bin terrorbat
-# -> target\release\terrorbat.exe
+cargo build --release --bin terrorbats
+# -> target\release\terrorbats.exe
 ```
 
-Copy `terrorbat.exe` wherever you like (helper: `install\install.ps1`).
+Copy `terrorbats.exe` wherever you like (helper: `install\install.ps1`).
 Terror Bat never modifies PATH silently. Git must be on PATH.
 
 Check readiness:
 
 ```powershell
-terrorbat doctor
+terrorbats doctor
 ```
 
 Doctor verifies Git, the evidence store, worktree create/remove, temp
@@ -54,7 +54,7 @@ writability and M2 process supervision; it reports optional tools
 ## Run a Bat
 
 ```powershell
-terrorbat run bats\unexpected-change.yaml --repo D:\Projects\some-project
+terrorbats run bats\unexpected-change.yaml --repo D:\Projects\some-project
 ```
 
 Rules:
@@ -105,10 +105,10 @@ the claim failed; such runs yield `INCONCLUSIVE` (or `INVALID` /
 ## Inspect, evidence, replay
 
 ```powershell
-terrorbat inspect <execution-id | receipt:sha256:...>
-terrorbat evidence show evidence:sha256:...        # text printed; digest verified on read
-terrorbat evidence show evidence:sha256:... --out file.bin   # binary extraction
-terrorbat replay <execution-id | receipt:sha256:...>
+terrorbats inspect <execution-id | receipt:sha256:...>
+terrorbats evidence show evidence:sha256:...        # text printed; digest verified on read
+terrorbats evidence show evidence:sha256:... --out file.bin   # binary extraction
+terrorbats replay <execution-id | receipt:sha256:...>
 ```
 
 Replay creates a **new execution** from the stored Bat source and the pinned
@@ -204,9 +204,9 @@ First Flight is complete: the Bats above run, the self-attack passes, and receip
 W2 adds repeated falsification on top of the same machinery. A **pack** names an ordered list of Bats (paths resolve relative to the pack file); a **campaign** runs a pack N times serially, each child a first-class ordinary run with its own receipt:
 
 ```powershell
-terrorbat pack check packs\first-flight.yaml
-terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --runs 2
-terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
+terrorbats pack check packs\first-flight.yaml
+terrorbats pack run packs\first-flight.yaml --repo D:\Projects\some-project --runs 2
+terrorbats pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
 ```
 
 A retry re-runs *until something works*; a campaign re-runs *to see what holds* — later results never overwrite earlier ones, and `stop-on-proven` halts only after a durably persisted PROVEN receipt. Campaign receipts (`campaign:sha256:…`) reference child receipts without copying evidence. The shipped `packs\first-flight.yaml` is a demonstrator only and carries no assurance-profile claims. Full evidence reuse/caching (Constitution 13) remains future work. External adapters are available through the M8 stdio protocol; see [External Adapter Protocol v1](external-adapter-v1.md).

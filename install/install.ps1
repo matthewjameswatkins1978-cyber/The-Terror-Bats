@@ -3,7 +3,7 @@
   Terror Bat 0.1 First Flight — portable install helper.
 
 .DESCRIPTION
-  Copies target\release\terrorbat.exe into a user-chosen directory.
+  Copies target\release\terrorbats.exe into a user-chosen directory.
   Does NOT modify PATH unless -AddToUserPath is explicitly passed,
   and reports exactly what changed when it does.
 
@@ -21,14 +21,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$binary = Join-Path $repoRoot 'target\release\terrorbat.exe'
+$binary = Join-Path $repoRoot 'target\release\terrorbats.exe'
 
 if (-not (Test-Path $binary)) {
-    Write-Error "Release binary not found at $binary. Run: cargo build --release --bin terrorbat"
+    Write-Error "Release binary not found at $binary. Run: cargo build --release --bin terrorbats"
 }
 
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
-$dest = Join-Path $InstallDir 'terrorbat.exe'
+$dest = Join-Path $InstallDir 'terrorbats.exe'
 Copy-Item $binary $dest -Force
 Write-Host "Installed: $dest"
 
