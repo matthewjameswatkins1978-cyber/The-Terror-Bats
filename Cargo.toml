@@ -26,3 +26,6 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(unix)'.dependencies]
 # Probe-only: ignoring SIGTERM in the graceful-termination test helper.
 libc = "0.2"
+
+[build-dependencies]
+winres = "0.1.12"

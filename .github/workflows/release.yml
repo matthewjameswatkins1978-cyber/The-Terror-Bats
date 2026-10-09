@@ -59,6 +59,11 @@ jobs:
         shell: pwsh
         run: |
           .\dist\pack-windows.ps1 -BuildWorkflow 'release/${{ github.ref_name }}'
+      - name: Verify embedded icon
+        shell: pwsh
+        run: |
+          pip install pefile
+          python dist/verify-icon.py target/release/terrorbats.exe assets/brand/terrorbats.ico
       - uses: actions/upload-artifact@v4
         with:
           name: windows-bundle
