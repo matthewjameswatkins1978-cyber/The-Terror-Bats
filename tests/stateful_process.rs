@@ -526,3 +526,293 @@ timeout:
     assert!(cleanup.survivors.is_empty());
     assert!(cleanup.terminated.len() + cleanup.forced.len() >= 1);
 }
+#[test]
+fn readiness_waits_observe_only_new_output() {
+    use terrorbat::supervisor::ExecutionStatus;
+    let temp = TempDir::new("process-readiness-cursor");
+    let registry = RefCell::new(ProcessRegistry::new("execution-fixture"));
+    start(&registry, &temp.path, "server", &["server"], None);
+    assert_eq!(
+        ready(
+            &registry,
+            &temp.path,
+            "server",
+            "stdout_contains",
+            json!("READY"),
+            2000,
+            1
+        )
+        .status,
+        ExecutionStatus::Completed
+    );
+    // First occurrence of the marker consumes it for readiness purposes.
+    invoke(
+        &registry,
+        &temp.path,
+        "write_stdin",
+        json!({"handle":"server","text":"ping","newline":true}),
+        2,
+    )
+    .expect("write ping");
+    assert_eq!(
+        ready(
+            &registry,
+            &temp.path,
+            "server",
+            "stdout_contains",
+            json!("ECHO:ping"),
+            2000,
+            3
+        )
+        .status,
+        ExecutionStatus::Completed
+    );
+    // The same marker must NOT be satisfied by those bytes: nothing new has
+    // arrived, so this wait must time out rather than reuse history.
+    assert_eq!(
+        ready(
+            &registry,
+            &temp.path,
+            "server",
+            "stdout_contains",
+            json!("ECHO:ping"),
+            500,
+            4
+        )
+        .status,
+        ExecutionStatus::TimedOut
+    );
+    // A genuinely new occurrence satisfies the next wait.
+    invoke(
+        &registry,
+        &temp.path,
+        "write_stdin",
+        json!({"handle":"server","text":"ping","newline":true}),
+        5,
+    )
+    .expect("write ping again");
+    assert_eq!(
+        ready(
+            &registry,
+            &temp.path,
+            "server",
+            "stdout_contains",
+            json!("ECHO:ping"),
+            2000,
+            6
+        )
+        .status,
+        ExecutionStatus::Completed
+    );
+}
+
+fn store_files(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read store dir") {
+            let path = entry.expect("store entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+fn assert_no_secret_bytes(root: &Path, secret: &[u8], what: &str) {
+    let files = store_files(root);
+    assert!(
+        !files.is_empty(),
+        "expected persisted run material under {}",
+        root.display()
+    );
+    for path in &files {
+        let bytes = std::fs::read(path).expect("read store file");
+        assert!(
+            bytes.windows(secret.len()).all(|w| w != secret),
+            "{what} leaked into {}",
+            path.display()
+        );
+    }
+}
+
+fn secret_bat(fixture: &str, var: &str) -> String {
+    format!(
+        r#"version: terrorbat/v1
+id: process-secret-reference
+claim:
+  text: A secret reference injects without persisting.
+requires: [process.start, process.readiness, process.kill]
+attack:
+  run:
+    - adapter: process
+      action: start
+      handle: gate
+      program: {}
+      args: [secret-check, {var}]
+      cwd: .
+      env:
+        {var}: {{$secret: {var}}}
+    - adapter: process
+      action: wait_ready
+      handle: gate
+      stdout_contains: SECRET_OK
+      timeout_ms: 5000
+    - adapter: process
+      action: kill
+      handle: gate
+      timeout_ms: 2000
+oracle:
+  all: []
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  run: 15s
+"#,
+        yaml_path(Path::new(fixture)),
+        var = var,
+    )
+}
+
+#[test]
+fn process_secret_reference_injects_without_persisting() {
+    // Unique sentinel: greppable, never a real credential.
+    let sentinel = "TB_SENTINEL_7f3a9c2e_secret_value_1B";
+    unsafe { std::env::set_var("TB_SECRET_PROBE_1B_A", sentinel) };
+    let temp = TempDir::new("process-secret");
+    let repo = temp.join("target");
+    make_repo(&repo);
+    let bat_dir = temp.join("bats");
+    let bat = write_spec(
+        &bat_dir,
+        "secret.yaml",
+        &secret_bat(fixture(), "TB_SECRET_PROBE_1B_A"),
+    );
+    let store = temp.join("store");
+    let output = run_bat(&RunOptions {
+        bat_path: bat.clone(),
+        repo,
+        store_root: Some(store.clone()),
+        overrides: vec![],
+    })
+    .expect("secret Bat runs");
+    assert_eq!(output.manifest.run_status, RunStatus::Completed);
+    // SECRET_OK was observed, so the secret really was injected at runtime.
+    let first = &output.receipt.execution.processes.handles[0].generations[0];
+    assert!(first.events.iter().any(|event| event.event == "ready"));
+    // The value itself must appear nowhere: not the store, not the Bat source.
+    assert_no_secret_bytes(&store, sentinel.as_bytes(), "secret value");
+    assert_no_secret_bytes(&bat_dir, sentinel.as_bytes(), "secret value");
+    unsafe { std::env::remove_var("TB_SECRET_PROBE_1B_A") };
+}
+
+#[test]
+fn process_missing_secret_fails_closed() {
+    let temp = TempDir::new("process-secret-missing");
+    let registry = RefCell::new(ProcessRegistry::new("secret-execution"));
+    let err = invoke(
+        &registry,
+        &temp.path,
+        "start",
+        json!({"handle":"gate","program":fixture(),"args":["secret-check", "TB_DEFINITELY_UNSET_1B"],"cwd":".",
+            "env":{"TB_DEFINITELY_UNSET_1B":{"$secret":"TB_DEFINITELY_UNSET_1B"}}}),
+        0,
+    )
+    .expect_err("missing secret must fail");
+    assert!(
+        err.to_string().contains("SECRET_NOT_AVAILABLE"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn process_secret_replay_requires_the_secret_again() {
+    let sentinel = "TB_SENTINEL_7f3a9c2e_secret_value_replay";
+    unsafe { std::env::set_var("TB_SECRET_PROBE_1B_B", sentinel) };
+    let temp = TempDir::new("process-secret-replay");
+    let repo = temp.join("target");
+    make_repo(&repo);
+    let bat_dir = temp.join("bats");
+    let bat = write_spec(
+        &bat_dir,
+        "secret.yaml",
+        &secret_bat(fixture(), "TB_SECRET_PROBE_1B_B"),
+    );
+    let store = temp.join("store");
+    let output = run_bat(&RunOptions {
+        bat_path: bat,
+        repo,
+        store_root: Some(store.clone()),
+        overrides: vec![],
+    })
+    .expect("secret Bat runs");
+    assert_eq!(output.manifest.run_status, RunStatus::Completed);
+    let original_id = output.receipt.receipt_id.clone();
+    // The secret is gone now: replay must fail closed, not recover the value.
+    unsafe { std::env::remove_var("TB_SECRET_PROBE_1B_B") };
+    let (replay, replayed) =
+        terrorbat::receipt::replay(&original_id, Some(store.clone())).expect("replay runs");
+    assert_eq!(replayed.manifest.run_status, RunStatus::Invalid);
+    assert_eq!(replay.original_receipt_id, original_id);
+    assert_no_secret_bytes(&store, sentinel.as_bytes(), "secret value");
+    assert_no_secret_bytes(&bat_dir, sentinel.as_bytes(), "secret value");
+}
+
+#[test]
+fn cleanup_names_owned_descendant() {
+    use terrorbat::supervisor::ExecutionStatus;
+    let temp = TempDir::new("process-descendant");
+    let registry = RefCell::new(ProcessRegistry::new("descendant-execution"));
+    start(&registry, &temp.path, "parent", &["child"], None);
+    // Wait for the descendant announcement (also exercises regex readiness).
+    assert_eq!(
+        ready(
+            &registry,
+            &temp.path,
+            "parent",
+            "stdout_matches",
+            json!("CHILD_PID:\\d+"),
+            5000,
+            1
+        )
+        .status,
+        ExecutionStatus::Completed
+    );
+    let observed = invoke(
+        &registry,
+        &temp.path,
+        "observe",
+        json!({"handle":"parent"}),
+        2,
+    )
+    .expect("observe parent");
+    let stdout = String::from_utf8_lossy(&observed.stdout);
+    let _pid: u32 = stdout
+        .split("CHILD_PID:")
+        .nth(1)
+        .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|s| s.parse().ok())
+        .expect("descendant pid announced");
+    // Cleanup runs while the descendant is still alive: it must be named.
+    let report = registry.borrow_mut().cleanup().clone();
+    let obs = report
+        .descendants
+        .iter()
+        .find(|o| o.handle == "parent")
+        .expect("descendant observation recorded");
+    assert_eq!(obs.generation, 1);
+    assert!(obs.root.contains("parent"));
+    assert!(obs.root_pid.is_some());
+    assert_eq!(obs.cleanup_outcome, "root-terminated");
+    #[cfg(unix)]
+    assert!(
+        obs.descendant_pids.contains(&_pid),
+        "owned descendant {_pid} must be named, saw {:?}",
+        obs.descendant_pids
+    );
+    #[cfg(not(unix))]
+    assert_eq!(obs.method, "windows-job-membership-not-enumerated");
+}

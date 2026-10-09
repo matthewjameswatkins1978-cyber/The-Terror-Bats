@@ -87,15 +87,25 @@ pub fn resolve_in_worktree(worktree: &Path, rel: &str) -> StepResult<PathBuf> {
         ));
     }
     let p = Path::new(rel);
-    if p.has_root() || p.is_absolute() || rel.starts_with("\\\\") || rel.starts_with("//") {
+    if p.has_root() || p.is_absolute() || rel.starts_with("//") {
         return Err(policy(format!(
             "path `{rel}` is absolute, rooted, or UNC; worktree-relative paths only"
         )));
     }
-    if rel.contains(':') {
-        return Err(policy(format!(
-            "path `{rel}` contains a drive or alternate-data-stream separator"
-        )));
+    // Windows drive / UNC / ADS syntax is Windows-only reasoning. On Unix a
+    // backslash is an ordinary filename character, not a separator, so these
+    // checks must not reject Unix filenames (see `escaping_paths_are_rejected`).
+    if cfg!(windows) {
+        if rel.starts_with("\\\\") {
+            return Err(policy(format!(
+                "path `{rel}` is UNC; worktree-relative paths only"
+            )));
+        }
+        if rel.contains(':') {
+            return Err(policy(format!(
+                "path `{rel}` contains a drive or alternate-data-stream separator"
+            )));
+        }
     }
     // Lexical normalisation with `..` escape rejection.
     let mut normalized = PathBuf::new();
@@ -225,6 +235,36 @@ fn malformed(msg: impl Into<String>) -> StepError {
     StepError::Malformed(msg.into())
 }
 
+/// Resolve one `env` mapping value for process start.
+///
+/// Accepts a plain string, or a runtime-only secret reference
+/// `{"$secret": "NAME"}` resolved from the execution environment at dispatch
+/// time. The referenced value only ever lives in memory: stored payloads
+/// (Bat source, canonical spec, receipts, evidence) keep the reference, so
+/// replay resolves it again and a missing variable fails closed instead of
+/// running with an empty secret.
+pub fn resolve_env_value(key: &str, value: &Value) -> StepResult<OsString> {
+    if let Some(s) = value.as_str() {
+        return Ok(OsString::from(s));
+    }
+    if let Some(obj) = value.as_object()
+        && obj.len() == 1
+        && let Some(Value::String(name)) = obj.get("$secret")
+    {
+        if name.is_empty() {
+            return Err(malformed(
+                "env `$secret` reference requires a non-empty variable name",
+            ));
+        }
+        return std::env::var_os(name).ok_or_else(|| {
+            malformed(format!("SECRET_NOT_AVAILABLE: environment variable `{name}` (referenced by env `{key}`) is not set"))
+        });
+    }
+    Err(malformed(format!(
+        "env value for `{key}` must be a string or a `$secret` reference mapping"
+    )))
+}
+
 /// Dispatch one built-in step. Unknown adapters/actions are malformed input
 /// (the runner also rejects them earlier during capability preflight).
 fn process_dispatch(
@@ -331,12 +371,11 @@ fn command_run(payload: &BTreeMap<String, Value>, ctx: &StepCtx<'_>) -> StepResu
     if let Some(env) = payload.get("env") {
         let map = env
             .as_object()
-            .ok_or_else(|| malformed("command.run `env` must be a mapping of strings"))?;
+            .ok_or_else(|| malformed("command.run `env` must be a mapping"))?;
         for (k, v) in map {
-            let value = v
-                .as_str()
-                .ok_or_else(|| malformed(format!("env value for `{k}` must be a string")))?;
-            cmd.env.set.push((OsString::from(k), OsString::from(value)));
+            cmd.env
+                .set
+                .push((OsString::from(k), resolve_env_value(k, v)?));
         }
     }
     cmd.deadline = ctx.deadline;

@@ -51,6 +51,19 @@ fn main() {
                 thread::sleep(Duration::from_secs(60));
             }
         }
+        Some("secret-check") => {
+            // Prints only whether the named variable is present; the value
+            // itself never touches output, so receipts stay secret-free.
+            let name = args.next().expect("secret-check variable name");
+            match std::env::var(&name) {
+                Ok(v) if !v.is_empty() => println!("SECRET_OK"),
+                _ => println!("SECRET_MISSING"),
+            }
+            io::stdout().flush().unwrap();
+            loop {
+                thread::sleep(Duration::from_secs(60));
+            }
+        }
         Some("tcp") => {
             let port = args.next().expect("port").parse::<u16>().unwrap();
             let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();

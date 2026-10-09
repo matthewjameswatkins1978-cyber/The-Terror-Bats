@@ -4,7 +4,6 @@ use crate::{
     supervisor::ExecutionStatus,
 };
 use command_group::{CommandGroup, GroupChild};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -60,12 +59,36 @@ pub struct LifecycleEvent {
     pub detail: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DescendantObservation {
+    /// Handle whose generation this observation belongs to.
+    pub handle: String,
+    /// Generation number of the observed root.
+    pub generation: u64,
+    /// Owned root identity (`execution:handle:gN:pidP`).
+    pub root: String,
+    /// OS pid of the root where known.
+    pub root_pid: Option<u32>,
+    /// How the observation was made: `proc-pgrp-scan`,
+    /// `windows-job-membership-not-enumerated`, or `root-pid-unknown`.
+    pub method: String,
+    /// Owned descendant pids seen alive inside the group/job boundary.
+    /// Escaped descendants are UNSUPPORTED and never appear here.
+    pub descendant_pids: Vec<u32>,
+    /// Outcome at cleanup end: `root-terminated`, `root-survivor`,
+    /// `root-exited`, or `pending` (observed, cleanup not yet finished).
+    pub cleanup_outcome: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CleanupReport {
     pub attempted: bool,
     pub terminated: Vec<String>,
     pub forced: Vec<String>,
     pub survivors: Vec<String>,
     pub errors: Vec<String>,
+    /// Owned-descendant observations, one per handle generation present at
+    /// cleanup start. Defaulted so pre-1C receipts stay readable.
+    #[serde(default)]
+    pub descendants: Vec<DescendantObservation>,
 }
 #[derive(Clone)]
 pub struct StartSpec {
@@ -116,13 +139,44 @@ impl Buffer {
             self.total,
         )
     }
-    fn has(&self, s: &str) -> bool {
-        let bytes = self.bytes.iter().copied().collect::<Vec<_>>();
-        String::from_utf8_lossy(&bytes).contains(s)
+    /// Search only bytes appended after `cursor` (a `total`-space offset).
+    ///
+    /// Returns the `total`-space offset just past the first match so the
+    /// caller can resume after it, the current `total`, and whether bytes
+    /// newer than `cursor` were already discarded from the bounded buffer.
+    fn contains_since(&self, cursor: u64, needle: &[u8]) -> (Option<u64>, u64, bool) {
+        let oldest = self.total.saturating_sub(self.bytes.len() as u64);
+        let from = cursor.max(oldest).min(self.total);
+        if needle.is_empty() {
+            // An empty marker matches immediately, as before; resume at present.
+            return (Some(self.total), self.total, from > cursor);
+        }
+        let window: Vec<u8> = self
+            .bytes
+            .iter()
+            .skip(from.saturating_sub(oldest) as usize)
+            .copied()
+            .collect();
+        let end = window
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .map(|pos| {
+                from.saturating_add(pos as u64)
+                    .saturating_add(needle.len() as u64)
+            });
+        (end, self.total, from > cursor)
     }
-    fn regex(&self, r: &Regex) -> bool {
-        let bytes = self.bytes.iter().copied().collect::<Vec<_>>();
-        r.is_match(&String::from_utf8_lossy(&bytes))
+    fn regex_since(&self, cursor: u64, r: &regex::bytes::Regex) -> (Option<u64>, u64, bool) {
+        let oldest = self.total.saturating_sub(self.bytes.len() as u64);
+        let from = cursor.max(oldest).min(self.total);
+        let window: Vec<u8> = self
+            .bytes
+            .iter()
+            .skip(from.saturating_sub(oldest) as usize)
+            .copied()
+            .collect();
+        let end = r.find(&window).map(|m| from.saturating_add(m.end() as u64));
+        (end, self.total, from > cursor)
     }
 }
 enum Input {
@@ -138,6 +192,12 @@ struct Running {
     err_join: Option<JoinHandle<()>>,
     out_cursor: u64,
     err_cursor: u64,
+    /// Generation-relative readiness observation positions, one per stream.
+    /// Each successful `wait_ready` advances its stream cursor past the match,
+    /// so a later wait only observes bytes appended afterwards. Fresh per
+    /// generation because `spawn` constructs a new `Running`.
+    ready_out: u64,
+    ready_err: u64,
 }
 struct Generation {
     report: GenerationReport,
@@ -289,6 +349,8 @@ impl ProcessRegistry {
                 err_join,
                 out_cursor: 0,
                 err_cursor: 0,
+                ready_out: 0,
+                ready_err: 0,
             },
         })
     }
@@ -395,10 +457,15 @@ impl ProcessRegistry {
         let re = cond
             .regex
             .as_deref()
-            .map(Regex::new)
+            .map(regex::bytes::Regex::new)
             .transpose()
             .map_err(|e| bad(format!("invalid readiness regex: {e}")))?;
         let g = self.active(name)?;
+        // Generation-relative observation: this wait only observes stream bytes
+        // appended after the previous successful readiness observation on the same
+        // stream, so a stale marker cannot satisfy a new request. Every generation
+        // starts with fresh cursors because `spawn` constructs a new `Running`.
+        let mut truncated_seen = false;
         loop {
             if !refresh(g)? {
                 return Err(ioerr(format!(
@@ -407,23 +474,63 @@ impl ProcessRegistry {
                 )));
             }
             let ready = if let Some(s) = &cond.contains {
+                let cursor = if cond.stderr {
+                    g.running.ready_err
+                } else {
+                    g.running.ready_out
+                };
                 let b = if cond.stderr {
                     &g.running.err
                 } else {
                     &g.running.out
                 };
-                b.lock()
-                    .map_err(|_| ioerr("readiness capture lock poisoned"))?
-                    .has(s)
+                let (found, truncated) = {
+                    let guard = b
+                        .lock()
+                        .map_err(|_| ioerr("readiness capture lock poisoned"))?;
+                    let (found, _, truncated) = guard.contains_since(cursor, s.as_bytes());
+                    (found, truncated)
+                };
+                truncated_seen |= truncated;
+                if let Some(end) = found {
+                    if cond.stderr {
+                        g.running.ready_err = end;
+                    } else {
+                        g.running.ready_out = end;
+                    }
+                    true
+                } else {
+                    false
+                }
             } else if let Some(r) = &re {
+                let cursor = if cond.stderr {
+                    g.running.ready_err
+                } else {
+                    g.running.ready_out
+                };
                 let b = if cond.stderr {
                     &g.running.err
                 } else {
                     &g.running.out
                 };
-                b.lock()
-                    .map_err(|_| ioerr("readiness capture lock poisoned"))?
-                    .regex(r)
+                let (found, truncated) = {
+                    let guard = b
+                        .lock()
+                        .map_err(|_| ioerr("readiness capture lock poisoned"))?;
+                    let (found, _, truncated) = guard.regex_since(cursor, r);
+                    (found, truncated)
+                };
+                truncated_seen |= truncated;
+                if let Some(end) = found {
+                    if cond.stderr {
+                        g.running.ready_err = end;
+                    } else {
+                        g.running.ready_out = end;
+                    }
+                    true
+                } else {
+                    false
+                }
             } else if let Some(addr) = cond.tcp {
                 TcpStream::connect_timeout(&addr, Duration::from_millis(100)).is_ok()
             } else {
@@ -450,10 +557,17 @@ impl ProcessRegistry {
                     stderr: Vec::new(),
                     stderr_total: 0,
                     wall_time: start.elapsed(),
-                    error: Some(format!(
-                        "PROCESS_READINESS_TIMEOUT: `{name}` was not ready within {} ms",
-                        bound.as_millis()
-                    )),
+                    error: Some(if truncated_seen {
+                        format!(
+                            "PROCESS_READINESS_TIMEOUT: `{name}` was not ready within {} ms (output buffer truncated during this wait; the marker may have appeared in discarded bytes, so absence is not established)",
+                            bound.as_millis()
+                        )
+                    } else {
+                        format!(
+                            "PROCESS_READINESS_TIMEOUT: `{name}` was not ready within {} ms",
+                            bound.as_millis()
+                        )
+                    }),
                 });
             }
             thread::sleep(POLL.min(bound.saturating_sub(start.elapsed())));
@@ -582,6 +696,25 @@ impl ProcessRegistry {
         }
         self.cleaned = true;
         self.cleanup.attempted = true;
+        // Owned-descendant observation happens BEFORE any termination signal:
+        // afterwards the group may already be gone. Unix scans /proc for the
+        // owned process-group id; other platforms record the root honestly.
+        let mut seen = Vec::new();
+        for (name, h) in &self.handles {
+            if let Some(g) = h.generations.last() {
+                let (method, pids) = observe_owned_descendants(g.report.pid);
+                seen.push(DescendantObservation {
+                    handle: name.clone(),
+                    generation: g.report.generation,
+                    root: g.report.process_identity.clone(),
+                    root_pid: g.report.pid,
+                    method: method.into(),
+                    descendant_pids: pids,
+                    cleanup_outcome: "pending".into(),
+                });
+            }
+        }
+        self.cleanup.descendants.extend(seen);
         let end = Instant::now() + Duration::from_secs(4);
         for (name, h) in &mut self.handles {
             if let Some(g) = h.generations.last_mut()
@@ -655,6 +788,19 @@ impl ProcessRegistry {
                 }
             }
         }
+        for obs in &mut self.cleanup.descendants {
+            if obs.cleanup_outcome != "pending" {
+                continue;
+            }
+            obs.cleanup_outcome = if self.cleanup.survivors.iter().any(|s| s == &obs.root) {
+                "root-survivor"
+            } else if self.cleanup.terminated.iter().any(|t| t == &obs.root) {
+                "root-terminated"
+            } else {
+                "root-exited"
+            }
+            .into();
+        }
         &self.cleanup
     }
     pub fn report(&self) -> ProcessRuntimeReport {
@@ -711,13 +857,10 @@ pub fn start_spec(p: &BTreeMap<String, Value>, root: &Path) -> Result<StartSpec,
         Some(value) => {
             let map = value
                 .as_object()
-                .ok_or_else(|| bad("`env` must be a string mapping"))?;
+                .ok_or_else(|| bad("`env` must be a mapping"))?;
             map.iter()
                 .map(|(key, value)| {
-                    value
-                        .as_str()
-                        .map(|v| (OsString::from(key), OsString::from(v)))
-                        .ok_or_else(|| bad(format!("env value `{key}` must be a string")))
+                    crate::builtins::resolve_env_value(key, value).map(|v| (OsString::from(key), v))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -874,6 +1017,69 @@ fn parse_strings(value: Option<&Value>, key: &str) -> Result<Vec<String>, StepEr
         })
         .collect()
 }
+/// Observe owned descendants of a supervised root process.
+///
+/// On Unix the supervisor starts each root as a process-group leader, so live
+/// group members found via /proc (excluding the root itself) are owned
+/// descendants. Elsewhere â€” notably Windows Job objects, which offer this crate
+/// no stable enumeration API â€” only the root is reported, honestly labelled.
+/// Escaped descendants outside the group/job boundary are UNSUPPORTED everywhere.
+fn observe_owned_descendants(root_pid: Option<u32>) -> (&'static str, Vec<u32>) {
+    match root_pid {
+        None => ("root-pid-unknown", Vec::new()),
+        Some(pid) => {
+            #[cfg(unix)]
+            {
+                ("proc-pgrp-scan", owned_group_members(pid))
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+                ("windows-job-membership-not-enumerated", Vec::new())
+            }
+        }
+    }
+}
+
+/// Best-effort /proc scan for live members of the owned process group.
+/// Reads only numeric /proc entries; silently skips vanished processes.
+#[cfg(unix)]
+fn owned_group_members(pgid: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return out;
+    };
+    for entry in dir.flatten() {
+        let pid: u32 = match entry.file_name().to_str().and_then(|s| s.parse().ok()) {
+            Some(pid) => pid,
+            None => continue,
+        };
+        if pid == pgid {
+            continue;
+        }
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+            continue;
+        };
+        // `comm` may contain spaces or parens: fields start after the last `)`.
+        // Layout there is ` state ppid pgrp ...`, so pgrp is the third field.
+        let Some((_, after)) = stat.rsplit_once(')') else {
+            continue;
+        };
+        let mut fields = after.split_whitespace();
+        let _state = fields.next();
+        let _ppid = fields.next();
+        if fields
+            .next()
+            .and_then(|s| s.parse::<u32>().ok())
+            .is_some_and(|pgrp| pgrp == pgid)
+        {
+            out.push(pid);
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
 fn refresh(g: &mut Generation) -> Result<bool, StepError> {
     if g.report
         .termination

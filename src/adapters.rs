@@ -116,7 +116,7 @@ pub fn all() -> Vec<AdapterInfo> {
                     "args: list of strings",
                     "cwd: worktree-relative path",
                     "stdin: string",
-                    "env: mapping of strings",
+                    "env: mapping of strings or {$secret: NAME} references (resolved at run time, never persisted)",
                 ],
                 &[
                     "exit code",
@@ -133,7 +133,7 @@ pub fn all() -> Vec<AdapterInfo> {
             &[
                 "Child programs are NOT path-confined; only Terror Bat's own built-in operations are worktree-confined.",
                 "Output capture is bounded (1 MiB retained per stream; totals always counted).",
-                "Secrets must come from environment/configuration, never from receipts.",
+                "Secrets must come from environment/configuration, never from receipts. `env` accepts runtime-only `{$secret: NAME}` references: resolved from the execution environment at start, never written to Bat source, receipts, or the evidence store; replay requires the secret again, and a missing variable fails closed with SECRET_NOT_AVAILABLE.",
             ],
             &[
                 "program: cargo, args: [test]",
@@ -288,7 +288,7 @@ pub fn all() -> Vec<AdapterInfo> {
             "process",
             "Universal Process Adapter",
             "builtin-partial",
-            "Stateful process generations can span Bat steps: start, wait for stdout/stderr/TCP/alive readiness, write stdin, observe bounded output, wait, terminate, kill, and restart. Handles are execution-local; replay creates fresh operating-system identities. The adapter remains partial because graceful terminate is Unix-only and the report identifies the owned root process, not every descendant.",
+            "Stateful process generations can span Bat steps: start, wait for stdout/stderr/TCP/alive readiness, write stdin, observe bounded output, wait, terminate, kill, and restart. Handles are execution-local; replay creates fresh operating-system identities. The adapter remains partial because graceful terminate is Unix-only and descendant observation covers owned process-group/job members only (escaped descendants unsupported).",
             vec![
                 op(
                     "start",
@@ -367,7 +367,7 @@ pub fn all() -> Vec<AdapterInfo> {
             ],
             &[
                 "Handles live for one Bat execution only. Restart preserves the previous generation and assigns a new generation number and process identity.",
-                "Cleanup makes a bounded graceful-then-force attempt and reports root-process survivors; escaped or individually surviving descendants are not enumerated.",
+                "Cleanup makes a bounded graceful-then-force attempt and reports root-process survivors. Owned process-group/job descendants observed at cleanup start are recorded per handle and generation (Unix: /proc group scan; Windows: root only, job membership not enumerated). Escaped descendants are UNSUPPORTED.",
                 "Output is a bounded tail. Totals and truncation are explicit; readiness timeout is not evidence that the target is ready or defective.",
             ],
             &["servers, daemons, workers, local databases, language servers, background services"],

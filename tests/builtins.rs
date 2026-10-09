@@ -41,18 +41,32 @@ fn escaping_paths_are_rejected() {
     let dir = TempDir::new("bi-escape");
     let wt = dir.join("wt");
     std::fs::create_dir_all(&wt).expect("wt");
+    // Cross-platform rejections: Unix absolute paths, POSIX-reserved `//`,
+    // `..` traversal escaping the worktree, and empty / root-resolving inputs.
     for bad in [
-        "C:\\Users\\someone\\secret.txt",
-        "c:/windows/system32",
-        "\\\\server\\share\\file",
         "//server/share/file",
         "/etc/passwd",
-        "\\rooted",
         "../outside.txt",
         "a/../../outside.txt",
         "..",
         "",
         ".",
+    ] {
+        let err = resolve_in_worktree(&wt, bad).err();
+        assert!(err.is_some(), "path `{bad}` must be rejected");
+        assert!(
+            matches!(err, Some(StepError::Policy(_))),
+            "path `{bad}` must be a policy rejection"
+        );
+    }
+    // Windows drive / UNC / backslash-rooted / ADS syntax is Windows-only
+    // reasoning (see `resolve_in_worktree`); it must stay rejected on Windows.
+    #[cfg(windows)]
+    for bad in [
+        "C:\\Users\\someone\\secret.txt",
+        "c:/windows/system32",
+        "\\\\server\\share\\file",
+        "\\rooted",
         "a:b",
     ] {
         let err = resolve_in_worktree(&wt, bad).err();
@@ -60,6 +74,22 @@ fn escaping_paths_are_rejected() {
         assert!(
             matches!(err, Some(StepError::Policy(_))),
             "path `{bad}` must be a policy rejection"
+        );
+    }
+    // On Unix a backslash is an ordinary filename character and `:` carries no
+    // drive meaning, so these are legitimate worktree-relative names.
+    #[cfg(unix)]
+    for ok in [
+        "C:\\Users\\someone\\secret.txt",
+        "c:/windows/system32",
+        "\\\\server\\share\\file",
+        "\\rooted",
+        "a:b",
+    ] {
+        let p = resolve_in_worktree(&wt, ok).expect("unix filename must resolve");
+        assert!(
+            p.starts_with(wt.canonicalize().unwrap()),
+            "unix filename `{ok}` must stay inside the worktree"
         );
     }
 }
