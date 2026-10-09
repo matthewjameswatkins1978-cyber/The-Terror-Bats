@@ -513,6 +513,13 @@ fn replay_with_missing_commit_explains_itself() {
     // Replace the repository with a fresh one that lacks the pinned commit.
     std::fs::remove_dir_all(&repo).expect("remove repo");
     make_repo(&repo);
+    if common::git(&repo, &["rev-parse", "HEAD"]) == out.manifest.target.commit {
+        // Same-second collision: an identical tree, author, message, and timestamp
+        // reuse the pinned hash. Force divergence so the test means what it says.
+        std::fs::write(repo.join("DIVERGED"), "diverged\n").expect("diverge marker");
+        common::git(&repo, &["add", "."]);
+        common::git(&repo, &["commit", "-q", "-m", "diverged"]);
+    }
     let err = receipt::replay(&out.receipt.receipt_id, Some(store)).expect_err("must fail");
     let msg = err.to_string();
     assert!(msg.contains("no longer exists in"), "{msg}");
