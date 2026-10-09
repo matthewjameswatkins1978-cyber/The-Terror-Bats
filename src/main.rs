@@ -101,6 +101,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Print shell completions to stdout (convenience only; never required
+    /// at runtime — redirect to your shell's completion directory).
+    Completions {
+        /// Shell to generate completions for.
+        shell: CompletionShell,
+    },
+    /// Print a man page (roff) generated from the live CLI definition.
+    /// Redirect into `share/man/man1/terrorbats.1` for release bundles.
+    Man,
+}
+
+/// Shells with first-class completion scripts. Convenience only.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum CompletionShell {
+    Powershell,
+    Bash,
+    Zsh,
+    Fish,
 }
 
 #[derive(Subcommand)]
@@ -475,6 +493,29 @@ fn run() -> Result<u8, String> {
                 );
             }
             Ok(if report.overall_ready { 0 } else { 3 })
+        }
+        Command::Completions { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::Shell;
+            let target = match shell {
+                CompletionShell::Powershell => Shell::PowerShell,
+                CompletionShell::Bash => Shell::Bash,
+                CompletionShell::Zsh => Shell::Zsh,
+                CompletionShell::Fish => Shell::Fish,
+            };
+            let mut cmd = Cli::command();
+            let mut buf = Vec::new();
+            clap_complete::generate(target, &mut cmd, "terrorbats", &mut buf);
+            print!("{}", String::from_utf8(buf).map_err(|e| e.to_string())?);
+            Ok(0)
+        }
+        Command::Man => {
+            use clap::CommandFactory;
+            let man = clap_mangen::Man::new(Cli::command());
+            let mut buf = Vec::new();
+            man.render(&mut buf).map_err(|e| e.to_string())?;
+            print!("{}", String::from_utf8(buf).map_err(|e| e.to_string())?);
+            Ok(0)
         }
     }
 }
