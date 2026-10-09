@@ -761,21 +761,46 @@ fn process_secret_replay_requires_the_secret_again() {
     assert_no_secret_bytes(&bat_dir, sentinel.as_bytes(), "secret value");
 }
 
-fn assert_store_contains(root: &Path, secret: &[u8], what: &str) -> Vec<std::path::PathBuf> {
-    let hits: Vec<std::path::PathBuf> = store_files(root)
-        .into_iter()
-        .filter(|path| {
-            std::fs::read(path)
-                .map(|bytes| bytes.windows(secret.len()).any(|w| w == secret))
-                .unwrap_or(false)
-        })
-        .collect();
-    assert!(
-        !hits.is_empty(),
-        "expected {what} to be retained in at least one file under {}",
-        root.display()
-    );
-    hits
+fn evidence_bytes(
+    store: &Path,
+    steps: &[terrorbat::runner::StepRecord],
+    stream: &str,
+) -> Vec<(String, Vec<u8>)> {
+    use terrorbat::evidence::EvidenceStore;
+    let evidence = EvidenceStore::open(store).expect("open evidence store");
+    // Only the steps that capture child output carry stream evidence: the
+    // one-shot `command.run` and the stateful `process.observe`. Both must
+    // reference a stored object for each stream — absence is a failure, not
+    // a pass.
+    let mut out = Vec::new();
+    for step in steps {
+        let capture = matches!(
+            (step.adapter.as_str(), step.action.as_str()),
+            ("command", "run") | ("process", "observe")
+        );
+        if !capture {
+            continue;
+        }
+        let reference = if stream == "stdout" {
+            &step.stdout
+        } else {
+            &step.stderr
+        };
+        let reference = reference.as_ref().unwrap_or_else(|| {
+            panic!(
+                "{}.{step} {stream} evidence is absent",
+                step.adapter,
+                step = step.action
+            )
+        });
+        let bytes = evidence.get(reference).expect("read evidence object");
+        out.push((
+            format!("{}.{}.{}", step.adapter, step.action, stream),
+            bytes,
+        ));
+    }
+    assert!(!out.is_empty(), "expected {stream} evidence references");
+    out
 }
 
 fn receipt_text(root: &Path) -> String {
@@ -878,9 +903,20 @@ fn process_secret_echoing_child_is_captured_verbatim_not_sanitised() {
     assert_eq!(output.manifest.run_status, RunStatus::Completed);
     // Both adapters ran the echoing child (command.run + process start).
     assert_eq!(output.receipt.execution.steps.len(), 5);
-    // The limitation, demonstrated: captured evidence retains the sentinel.
-    // (Both stdout and stderr copies land in evidence objects.)
-    assert_store_contains(&store, sentinel.as_bytes(), "echoed secret");
+    // The limitation, demonstrated per stream: each referenced stdout and
+    // stderr evidence object retains the sentinel. Either stream absent or
+    // sanitised fails this test by construction.
+    let steps = &output.receipt.execution.steps;
+    for stream in ["stdout", "stderr"] {
+        for (label, bytes) in evidence_bytes(&store, steps, stream) {
+            assert!(
+                bytes
+                    .windows(sentinel.len())
+                    .any(|w| w == sentinel.as_bytes()),
+                "echoed secret missing from {label} evidence object"
+            );
+        }
+    }
     // The declarative configuration still carries only the reference.
     let bat_text =
         std::fs::read_to_string(bat_dir.join("secret-echo.yaml")).expect("read Bat source");
@@ -897,9 +933,27 @@ fn process_secret_echoing_child_is_captured_verbatim_not_sanitised() {
     // disclosed bytes. (Redaction replaces the reference form too: the
     // receipt keeps neither value nor reference, only the marker.)
     let receipt = receipt_text(&store);
+    let receipt_value: Value = serde_json::from_str(&receipt).expect("parse receipt JSON");
+    let receipt_steps = receipt_value["execution"]["steps"]
+        .as_array()
+        .expect("receipt execution steps");
+    let mut redacted_envs = 0;
+    for step in receipt_steps {
+        if let Some(env) = step["payload"]["env"].as_object() {
+            assert!(!env.is_empty(), "env payload must survive as a mapping");
+            for (key, value) in env {
+                assert_eq!(
+                    value.as_str(),
+                    Some("[REDACTED]"),
+                    "receipt env `{key}` must be redacted"
+                );
+                redacted_envs += 1;
+            }
+        }
+    }
     assert!(
-        receipt.contains("[REDACTED]"),
-        "receipt env must be redacted"
+        redacted_envs >= 2,
+        "both secret-bearing steps must show redacted env"
     );
     assert!(
         !receipt.contains(sentinel),
