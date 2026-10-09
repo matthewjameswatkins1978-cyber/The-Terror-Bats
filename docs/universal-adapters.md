@@ -111,6 +111,24 @@ survivors. It does not enumerate each descendant or detect a descendant that
 escapes its owned process group/job, and this runtime is not a hostile-code
 sandbox.
 
+### Secret references and the disclosure boundary
+
+`process.start` and `command.run` accept runtime-only `{$secret: NAME}`
+environment references. The supported guarantee is narrow: the declarative
+configuration (Bat source, canonical spec) stores the reference, not the
+resolved value; receipt invocation payloads record env values as
+`[REDACTED]`; replay resolves the reference again; a missing variable fails
+closed with `SECRET_NOT_AVAILABLE`.
+
+The explicit limitation: captured child stdout/stderr and files read back
+as evidence are byte-verbatim. A target process that prints its secret — to
+stdout, stderr, its own logs, or files Terror Bat later reads — discloses
+that secret into the evidence store. Arbitrary literal credentials in Bat
+source, argv, stdin, or other authored fields are not protected by the
+environment-reference mechanism, and the heuristic argv redaction is not a
+comprehensive secret-safety guarantee. Authors must keep secrets out of
+child-observable output; there is no automatic redaction, by design for RC1.
+
 On Linux, `terminate` requests SIGTERM to the owned process group. On Windows,
 graceful termination is explicitly unsupported; use `kill` for Job-based forced
 termination. Both platforms support bounded wait, readiness, stdin,

@@ -761,6 +761,166 @@ fn process_secret_replay_requires_the_secret_again() {
     assert_no_secret_bytes(&bat_dir, sentinel.as_bytes(), "secret value");
 }
 
+fn assert_store_contains(root: &Path, secret: &[u8], what: &str) -> Vec<std::path::PathBuf> {
+    let hits: Vec<std::path::PathBuf> = store_files(root)
+        .into_iter()
+        .filter(|path| {
+            std::fs::read(path)
+                .map(|bytes| bytes.windows(secret.len()).any(|w| w == secret))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        !hits.is_empty(),
+        "expected {what} to be retained in at least one file under {}",
+        root.display()
+    );
+    hits
+}
+
+fn receipt_text(root: &Path) -> String {
+    for path in store_files(root) {
+        if path.file_name().and_then(|n| n.to_str()) != Some("receipt.json") {
+            continue;
+        }
+        return std::fs::read_to_string(&path).expect("read receipt JSON");
+    }
+    panic!("no receipt.json found under {}", root.display());
+}
+
+fn canonical_texts(root: &Path) -> Vec<String> {
+    // Declarative configuration material persisted by the run (Bat source
+    // and canonical spec evidence objects): the `$secret` reference must
+    // survive here, the resolved value must not.
+    store_files(root)
+        .into_iter()
+        .filter_map(|path| {
+            std::fs::read(&path)
+                .ok()
+                .and_then(|bytes| std::str::from_utf8(&bytes).ok().map(str::to_string))
+        })
+        .filter(|text| text.contains("$secret"))
+        .collect()
+}
+
+fn secret_echo_bat(fixture: &str, var: &str) -> String {
+    format!(
+        r#"version: terrorbat/v1
+id: process-secret-disclosure-boundary
+claim:
+  text: An echoing child discloses its secret into captured evidence.
+requires: [process.spawn, process.start, process.wait, process.observe, process.kill]
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: {}
+      args: [secret-echo, {var}]
+      env:
+        {var}: {{$secret: {var}}}
+    - adapter: process
+      action: start
+      handle: echo
+      program: {}
+      args: [secret-echo, {var}]
+      cwd: .
+      env:
+        {var}: {{$secret: {var}}}
+    - adapter: process
+      action: wait
+      handle: echo
+      timeout_ms: 5000
+    - adapter: process
+      action: observe
+      handle: echo
+    - adapter: process
+      action: kill
+      handle: echo
+      timeout_ms: 2000
+oracle:
+  all: []
+evidence:
+  capture: [stdout, stderr]
+timeout:
+  run: 15s
+"#,
+        yaml_path(Path::new(fixture)),
+        yaml_path(Path::new(fixture)),
+        var = var,
+    )
+}
+
+#[test]
+fn process_secret_echoing_child_is_captured_verbatim_not_sanitised() {
+    // Case B of the disclosure contract: the child deliberately emits the
+    // sentinel on stdout AND stderr. The capture path must retain it — this
+    // test FAILS if anyone adds silent sanitising, and it documents that
+    // capture is verbatim. Unique sentinel: greppable, never a real secret.
+    let sentinel = "TB_SENTINEL_7f3a9c2e_disclosed_value_2B";
+    unsafe { std::env::set_var("TB_SECRET_PROBE_2B", sentinel) };
+    let temp = TempDir::new("process-secret-disclosure");
+    let repo = temp.join("target");
+    make_repo(&repo);
+    let bat_dir = temp.join("bats");
+    let bat = write_spec(
+        &bat_dir,
+        "secret-echo.yaml",
+        &secret_echo_bat(fixture(), "TB_SECRET_PROBE_2B"),
+    );
+    let store = temp.join("store");
+    let output = run_bat(&RunOptions {
+        bat_path: bat,
+        repo,
+        store_root: Some(store.clone()),
+        overrides: vec![],
+    })
+    .expect("disclosure Bat runs");
+    assert_eq!(output.manifest.run_status, RunStatus::Completed);
+    // Both adapters ran the echoing child (command.run + process start).
+    assert_eq!(output.receipt.execution.steps.len(), 5);
+    // The limitation, demonstrated: captured evidence retains the sentinel.
+    // (Both stdout and stderr copies land in evidence objects.)
+    assert_store_contains(&store, sentinel.as_bytes(), "echoed secret");
+    // The declarative configuration still carries only the reference.
+    let bat_text =
+        std::fs::read_to_string(bat_dir.join("secret-echo.yaml")).expect("read Bat source");
+    assert!(
+        bat_text.contains("$secret"),
+        "reference must survive in source"
+    );
+    assert!(
+        !bat_text.contains(sentinel),
+        "resolved value must not be in Bat source"
+    );
+    // Receipt invocation metadata: env values fully redacted, resolved value
+    // absent — even though evidence files beside it deliberately contain the
+    // disclosed bytes. (Redaction replaces the reference form too: the
+    // receipt keeps neither value nor reference, only the marker.)
+    let receipt = receipt_text(&store);
+    assert!(
+        receipt.contains("[REDACTED]"),
+        "receipt env must be redacted"
+    );
+    assert!(
+        !receipt.contains(sentinel),
+        "resolved value must not be in receipt JSON"
+    );
+    // The reference itself survives in the persisted declarative
+    // configuration (Bat source and canonical spec objects), never resolved.
+    let canonicals = canonical_texts(&store);
+    assert!(
+        !canonicals.is_empty(),
+        "reference must survive in stored configuration"
+    );
+    for text in &canonicals {
+        assert!(
+            !text.contains(sentinel),
+            "resolved value must not be in stored configuration"
+        );
+    }
+    unsafe { std::env::remove_var("TB_SECRET_PROBE_2B") };
+}
+
 #[test]
 fn cleanup_names_owned_descendant() {
     use terrorbat::supervisor::ExecutionStatus;

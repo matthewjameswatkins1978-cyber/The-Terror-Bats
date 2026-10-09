@@ -51,9 +51,27 @@ fn main() {
                 thread::sleep(Duration::from_secs(60));
             }
         }
+        Some("secret-echo") => {
+            // Adversarial disclosure probe (test-only): prints the exact value
+            // of the named variable to BOTH stdout and stderr, then exits 0.
+            // This deliberately places secret material into captured output so
+            // the disclosure-boundary regression can prove that capture is
+            // verbatim and NOT sanitised. Never point this at a real secret
+            // outside the regression's artificial sentinel.
+            let name = args.next().expect("secret-echo variable name");
+            let value = std::env::var(&name).unwrap_or_default();
+            println!("SECRET_ECHO:{value}");
+            eprintln!("SECRET_ECHO:{value}");
+            io::stdout().flush().unwrap();
+            io::stderr().flush().unwrap();
+        }
         Some("secret-check") => {
             // Prints only whether the named variable is present; the value
-            // itself never touches output, so receipts stay secret-free.
+            // itself never touches this fixture's output. That keeps THIS
+            // fixture's capture clean, but it is not a general guarantee:
+            // any target that prints a secret puts it into captured output
+            // verbatim (see the secret-echo mode and the disclosure
+            // regression).
             let name = args.next().expect("secret-check variable name");
             match std::env::var(&name) {
                 Ok(v) if !v.is_empty() => println!("SECRET_OK"),

@@ -239,10 +239,14 @@ fn malformed(msg: impl Into<String>) -> StepError {
 ///
 /// Accepts a plain string, or a runtime-only secret reference
 /// `{"$secret": "NAME"}` resolved from the execution environment at dispatch
-/// time. The referenced value only ever lives in memory: stored payloads
-/// (Bat source, canonical spec, receipts, evidence) keep the reference, so
-/// replay resolves it again and a missing variable fails closed instead of
-/// running with an empty secret.
+/// time. The resolved value only ever lives in Terror Bat's own memory and in
+/// the spawned child's environment: the declarative configuration (Bat source,
+/// canonical spec, receipt invocation payloads) keeps the reference, so replay
+/// resolves it again and a missing variable fails closed instead of running
+/// with an empty secret. This does NOT sanitise what the child itself emits:
+/// captured child stdout/stderr and files read back as evidence are stored
+/// byte-verbatim, so a target that prints its secret discloses it into the
+/// evidence store. Authors must keep secrets out of child-observable output.
 pub fn resolve_env_value(key: &str, value: &Value) -> StepResult<OsString> {
     if let Some(s) = value.as_str() {
         return Ok(OsString::from(s));
