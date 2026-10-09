@@ -1,6 +1,6 @@
 # Threadmoth hostile-pack bindings (example — copy aside and fix the paths).
 #
-# Terror Bat resolves a `program` entry that contains a directory relative to
+# Terror Bats resolves a `program` entry that contains a directory relative to
 # THIS file, but `args` entries are passed through verbatim, and the adapter
 # execute process runs with the disposable worktree as its cwd. So both paths
 # below must be ABSOLUTE (or bare PATH names). Replace the tokens, then run:

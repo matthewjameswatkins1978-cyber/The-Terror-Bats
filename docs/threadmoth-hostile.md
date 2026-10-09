@@ -19,7 +19,7 @@ capabilities, preview, mutate, plan, apply_plan, transact_preview, transact
 ```
 
 (`recover_inspect` is omitted: no Bat needs it, and only needed actions are
-exposed.) The adapter validates its Terror Bat payload strictly (unknown or
+exposed.) The adapter validates its Terror Bats payload strictly (unknown or
 irrelevant fields are `invalid`, exit 2; worktree escapes are `invalid`;
 missing executables and non-JSON Threadmoth output are
 `infrastructure_error`), builds the real Threadmoth CLI invocation, parses the

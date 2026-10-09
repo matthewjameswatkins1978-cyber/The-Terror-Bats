@@ -13,7 +13,7 @@
 //! ```
 //!
 //! Durability claim (deliberately narrow): evidence successfully finalised by
-//! Terror Bat survives failure of supervised child processes. Power-loss and
+//! Terror Bats survives failure of supervised child processes. Power-loss and
 //! disk-corruption survival are NOT claimed.
 
 use std::fs;

@@ -1,7 +1,7 @@
 //! Built-in primitive tests: Windows path safety (absolute/UNC/drive/`..`/
 //! junction escape), fs payload rules, and command dispatch errors.
 //!
-//! Honesty note: these tests prove Terror Bat's *built-in* path validation.
+//! Honesty note: these tests prove Terror Bats' *built-in* path validation.
 //! They do not prove sandboxing of arbitrary child processes — nothing in
 //! worktree mode does.
 

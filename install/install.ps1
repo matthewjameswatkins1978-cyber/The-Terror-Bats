@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Terror Bat 0.1 First Flight — portable install helper.
+  The Terror Bats Framework 0.2.0-rc.1 — portable install helper.
 
 .DESCRIPTION
   Copies target\release\terrorbats.exe into a user-chosen directory.

@@ -1,6 +1,6 @@
 //! Sartorial presentation integration tests.
 //!
-//! Governing rule under test: Terror Bat owns truth, Sartorial owns
+//! Governing rule under test: Terror Bats owns truth, Sartorial owns
 //! presentation. These tests prove meaning survives projection —
 //! wording may improve, nothing material may disappear — and that
 //! machine output, exit codes, hashes and verification are untouched.

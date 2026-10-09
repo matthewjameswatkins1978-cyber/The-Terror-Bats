@@ -132,7 +132,7 @@ pub fn run_doctor(store_root: Option<PathBuf>) -> DoctorReport {
         .unwrap_or_else(|| (false, "skipped: git unavailable".to_string()));
     core.push(check("worktrees", worktree_check.0, worktree_check.1));
 
-    // Optional tools: absence never makes Terror Bat unhealthy.
+    // Optional tools: absence never makes Terror Bats unhealthy.
     let mut optional = Vec::new();
     for (tool, args) in [
         ("cargo", ["--version"].as_slice()),

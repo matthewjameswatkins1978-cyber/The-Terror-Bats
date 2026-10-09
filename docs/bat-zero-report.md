@@ -72,7 +72,7 @@ Allowed dispositions: reproduced / weakened / **evidence insufficient** /
 contradicted / inconclusive.
 
 **Disposition: evidence insufficient** — for any empirical arm-superiority
-claim. This agrees with the prior report's own licensing text; Terror Bat
+claim. This agrees with the prior report's own licensing text; Terror Bats
 did not need to take it on faith, it proved the current state
 mechanically:
 
@@ -86,7 +86,7 @@ mechanically:
 - the product practises manifest-level reuse discipline for its own
   infrastructure (BZ-4).
 
-No Terror Bat output was tuned toward any prior answer; the two PROVEN
+No Terror Bats output was tuned toward any prior answer; the two PROVEN
 findings are properties of the repository, not of the reference report's
 conclusions.
 
@@ -101,7 +101,7 @@ conclusions.
    The engine contains zero Go knowledge.
 3. **Reproducible from receipt/evidence?** Yes — BZ-1 replayed to identical
    verdict and identical evidence identities on the same machine; receipts
-   pin repo, commit, Git and Terror Bat versions.
+   pin repo, commit, Git and Terror Bats versions.
 4. **Receipts easier to inspect than the manual experiment?** Yes.
    Establishing these facts manually took branch archaeology
    (`for-each-ref`, `merge-base --is-ancestor`, `cat-file`, filtered
@@ -139,7 +139,7 @@ tripped:
 
 - The agent-in-the-loop arms (the original experiment's core) remain
   unrescored: that needs AI execution (M9) and, for live-model numbers,
-  Reusery-side Packet 16 work. Terror Bat's gap, honestly recorded — not
+  Reusery-side Packet 16 work. Terror Bats' gap, honestly recorded — not
   papered over.
 - BZ-5's Go verifier used the warm module cache; a cold machine would
   exercise the network (declared, UNENFORCED — the receipt says so).

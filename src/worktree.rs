@@ -22,7 +22,7 @@ use serde::Serialize;
 use crate::error::{Error, Result};
 use crate::supervisor::{CancelToken, ExecutionStatus, SupervisedCommand, SupervisedOutcome};
 
-/// Bound for any single Git invocation made by Terror Bat itself.
+/// Bound for any single Git invocation made by Terror Bats itself.
 const GIT_DEADLINE: Duration = Duration::from_secs(120);
 
 /// Run a Git command and require a zero exit.
@@ -70,7 +70,7 @@ fn git_ok(repo: &Path, args: &[&str], what: &str) -> Result<String> {
     Ok(out.stdout.as_str_lossy().trim().to_string())
 }
 
-/// What the target repository looked like when Terror Bat accepted it.
+/// What the target repository looked like when Terror Bats accepted it.
 #[derive(Debug, Clone, Serialize)]
 pub struct TargetState {
     pub root: PathBuf,
@@ -82,7 +82,7 @@ pub struct TargetState {
 }
 
 /// Inspect and validate the target repository. Refuses dirty repositories:
-/// Terror Bat will not silently exclude or incorporate local changes.
+/// Terror Bats will not silently exclude or incorporate local changes.
 pub fn inspect_target(repo: &Path) -> Result<TargetState> {
     if !repo.exists() {
         return Err(Error::spec(repo, "target repository path does not exist"));

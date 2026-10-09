@@ -1,9 +1,9 @@
-# Terror Bat 0.1 — First Flight Guide (Windows)
+# The Terror Bats Framework — First Flight Guide (Windows)
 
 This guide gets a technical user from zero to a real, evidence-backed result
 without reading source code.
 
-## What Terror Bat is
+## What Terror Bats is
 
 A language-agnostic falsification and assurance framework. It attacks claims
 about systems, isolates the attack in a disposable Git worktree, captures
@@ -19,7 +19,7 @@ oracle, and evidence requirements. The pipeline:
 CLAIM → ATTACK → EXECUTION → ORACLE → EVIDENCE → RECEIPT
 ```
 
-## What Terror Bat is not (First Flight)
+## What Terror Bats is not (First Flight)
 
 - Not a sandbox. The disposable Git worktree gives **reversibility and
   observation**, not containment. Host filesystem, network, credentials and
@@ -39,7 +39,7 @@ cargo build --release --bin terrorbats
 ```
 
 Copy `terrorbats.exe` wherever you like (helper: `install\install.ps1`).
-Terror Bat never modifies PATH silently. Git must be on PATH.
+Terror Bats never modifies PATH silently. Git must be on PATH.
 
 Check readiness:
 
@@ -60,7 +60,7 @@ terrorbats run bats\unexpected-change.yaml --repo D:\Projects\some-project
 Rules:
 
 - The target repository **must be clean** (no tracked/staged/untracked
-  changes). Dirty targets are refused — Terror Bat never silently includes
+  changes). Dirty targets are refused — Terror Bats never silently includes
   or discards your local work.
 - The exact HEAD commit is pinned; the attack runs in a disposable worktree
   under `%TEMP%\terrorbat\<execution-id>\`, never in your working tree.
@@ -82,7 +82,7 @@ RECEIPT:   receipt:sha256:...
 
 `PROVEN` = deterministic evidence established the claim was **falsified
 under the recorded conditions** (this repo, this commit, this machine, this
-Terror Bat version). It is **not** a universal proof, not a certification,
+Terror Bats version). It is **not** a universal proof, not a certification,
 and not a security statement.
 
 `NOT OBSERVED` = this attack did not falsify the claim. It is **not** a
@@ -199,7 +199,7 @@ The receipt remains authoritative; the exit code is a summary.
 
 ## Packs and campaigns (W2)
 
-First Flight is complete: the Bats above run, the self-attack passes, and receipts verify. The in-repo self-attack is explicitly **self-attack lite** — a fixed demonstrator over known Bats, not an open-ended assault on Terror Bat itself (that remains M10).
+First Flight is complete: the Bats above run, the self-attack passes, and receipts verify. The in-repo self-attack is explicitly **self-attack lite** — a fixed demonstrator over known Bats, not an open-ended assault on Terror Bats itself (that remains M10).
 
 W2 adds repeated falsification on top of the same machinery. A **pack** names an ordered list of Bats (paths resolve relative to the pack file); a **campaign** runs a pack N times serially, each child a first-class ordinary run with its own receipt:
 

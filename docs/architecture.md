@@ -1,10 +1,10 @@
-# Terror Bat Architecture v0.1 (M0)
+# The Terror Bats Framework Architecture (M0)
 
 Status: architectural contract only. No implementation exists. Planned implementation language: Rust.
 
 ## 1. Core pipeline
 
-Every Terror Bat experiment follows one pipeline:
+Every Terror Bats experiment follows one pipeline:
 
 ```text
 CLAIM
@@ -27,7 +27,7 @@ RECEIPT
 - **EVIDENCE** — immutable, content-addressed artifacts that outlive the run (diffs, stdout/stderr, logs, environment facts).
 - **RECEIPT** — the primary human-facing output: what was claimed, what was attempted, what happened, how it was judged, and how to reproduce it.
 
-Terror Bat answers one question: **what could still be wrong while all the ordinary tests are green?** It does not replace test suites, fuzzers, property testing, mutation testing, static analysis, security scanners, or model evals. It orchestrates and combines them.
+Terror Bats answers one question: **what could still be wrong while all the ordinary tests are green?** It does not replace test suites, fuzzers, property testing, mutation testing, static analysis, security scanners, or model evals. It orchestrates and combines them.
 
 ## 2. Conceptual components
 
@@ -56,7 +56,7 @@ These principles bind all later milestones. Wording may be polished; meaning may
 7. A Bat may do less than the host can do.
 8. AI may propose attacks; deterministic machinery proves findings wherever reasonably possible.
 9. `suspected`, `reproduced`, and `proven` are distinct epistemic states.
-10. Terror Bat never claims certification, approval, security or trust status that an external authority has not actually granted.
+10. Terror Bats never claims certification, approval, security or trust status that an external authority has not actually granted.
 11. Existing testing systems are reused rather than unnecessarily replaced.
 12. Human-readable names are labels; canonical identity may be content-derived.
 13. Cached evidence may only be reused when all declared relevant inputs match.
@@ -70,7 +70,7 @@ These principles bind all later milestones. Wording may be polished; meaning may
 
 ## 4. Supervision (OTP-inspired)
 
-Terror Bat steals OTP *semantics*, not the BEAM runtime:
+Terror Bats steals OTP *semantics*, not the BEAM runtime:
 
 - Everything executable has an owner; supervisors own cancellation and timeout.
 - Workers have explicit lifetimes; failures are expected and isolated.
@@ -96,7 +96,7 @@ The `ReceiptWriter` sits outside `BatSupervisor` so that a crashed Bat still yie
 
 ### Execution status, oracle result, finding maturity
 
-Terror Bat keeps a strict separation between three conceptual layers:
+Terror Bats keeps a strict separation between three conceptual layers:
 
 ```text
 WHAT HAPPENED TO THE RUN?
@@ -161,11 +161,11 @@ repository
 
 Per Constitution 19, every receipt must state exactly what isolation was and was not enforced.
 
-Future stronger isolation should reuse external systems — containers, WASI, OpenShell, VMs — rather than building a Terror Bat container runtime.
+Future stronger isolation should reuse external systems — containers, WASI, OpenShell, VMs — rather than building a Terror Bats container runtime.
 
 ## 6. Adapter principle
 
-Terror Bat must not need to understand every programming language. Adapters (built-in or external) execute:
+Terror Bats must not need to understand every programming language. Adapters (built-in or external) execute:
 
 ```text
 cargo test
@@ -212,7 +212,7 @@ Human names remain labels; content identity is canonical where appropriate (Cons
 
 **M1 implementation status.** `bat:`, `claim:`, `attack:`, and `oracle:` identities are implemented: each is SHA-256 over RFC 8785 canonical JSON of the resolved semantic component (see [bat-spec-v0.md](bat-spec-v0.md) §13). `environment.relevant` declarations are part of Bat identity; actual machine values are never inspected or hashed. Run, evidence, and receipt identities, and cache lookup, are later milestones.
 
-**W2 implementation status.** Bat Packs (`pack:sha256:` over the canonical `{version, bats}` projection) and serial Campaigns (`campaign:sha256:` aggregates that reference — never copy — child receipts) are implemented. A campaign is not a retry mechanism: every child is a first-class ordinary run, later results never overwrite earlier ones, and the target HEAD is pinned at campaign start and re-checked before every child. Campaigns stay serial: child order is part of the evidence, and parallel execution would trade determinism for speed Terror Bat has not earned yet. Minimisation, if it ever comes, follows reliable reproduction — it never precedes it. AI discovery stays outside deterministic proof (Constitution 8, §7). Full evidence reuse/caching remains M7. M8 external adapters use explicit local bindings and remain outside Pack identity.
+**W2 implementation status.** Bat Packs (`pack:sha256:` over the canonical `{version, bats}` projection) and serial Campaigns (`campaign:sha256:` aggregates that reference — never copy — child receipts) are implemented. A campaign is not a retry mechanism: every child is a first-class ordinary run, later results never overwrite earlier ones, and the target HEAD is pinned at campaign start and re-checked before every child. Campaigns stay serial: child order is part of the evidence, and parallel execution would trade determinism for speed Terror Bats has not earned yet. Minimisation, if it ever comes, follows reliable reproduction — it never precedes it. AI discovery stays outside deterministic proof (Constitution 8, §7). Full evidence reuse/caching remains M7. M8 external adapters use explicit local bindings and remain outside Pack identity.
 
 Conceptual run identity:
 
@@ -233,11 +233,11 @@ Binding rules for M1+:
 - Secrets must not accidentally become hash inputs that leak information.
 - Environment inputs must be *declared*, not indiscriminately hashed from the whole machine.
 - Cache hits need explainable provenance; cache misses should eventually explain what changed.
-- Content addressing is **not** semantic equivalence. Identical work may be reused only if all declared relevant inputs match (Constitution 13). Terror Bat does not attempt semantic equivalence of arbitrary source code.
+- Content addressing is **not** semantic equivalence. Identical work may be reused only if all declared relevant inputs match (Constitution 13). Terror Bats does not attempt semantic equivalence of arbitrary source code.
 
 ## 9. Context economy (architectural requirement)
 
-AI-assisted Terror Bat operations are designed around **progressive disclosure**. Never dump an entire repository into model context by default.
+AI-assisted Terror Bats operations are designed around **progressive disclosure**. Never dump an entire repository into model context by default.
 
 Future logical context handles:
 
@@ -284,25 +284,25 @@ KILL / CONTINUE GATE
 M7    Evidence reuse and explainable caching
 M8    External adapter protocol — implemented as `terrorbat-adapter/v1`
 M9    AI discovery/generation
-M10   Terror Bat attacks Terror Bat
+M10   Terror Bats attacks Terror Bats
 
 Later WASI / stronger sandboxes, assurance profiles, distributed Colony
 ```
 
 ## 11. Kill criteria (mandatory)
 
-Terror Bat should be **stopped or substantially redesigned** if Bat Zero shows that:
+Terror Bats should be **stopped or substantially redesigned** if Bat Zero shows that:
 
 1. It is merely a complicated shell-script runner.
 2. Expressing the Reusery experiment requires large amounts of Terror-Bat-specific code.
 3. Receipts are less understandable than the underlying experiment.
-4. Language independence requires Terror Bat to deeply understand each language ecosystem.
+4. Language independence requires Terror Bats to deeply understand each language ecosystem.
 5. Evidence cannot be made meaningfully more reproducible than ordinary logs.
 6. Isolation creates more operational risk than it removes.
 7. The framework adds significant context/tooling overhead without producing better assurance.
 8. Deterministic proof repeatedly collapses into model judgement.
 9. The architecture requires recreating existing mature runtimes, test systems, sandboxes or package managers.
-10. Terror Bat becomes a platform before proving a useful Bat.
+10. Terror Bats becomes a platform before proving a useful Bat.
 
 A good experiment is allowed to kill the project.
 

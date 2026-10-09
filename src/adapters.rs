@@ -1,11 +1,11 @@
 //! Universal adapter capability discovery.
 //!
-//! Terror Bat's normal first question is: *"Can one of the universal
+//! Terror Bats' normal first question is: *"Can one of the universal
 //! adapters already reach this thing?"* This module answers it without
 //! folklore: every adapter reports its own operations, inputs, outputs,
 //! constraints, examples, and platform limitations.
 //!
-//! Principle: adapters describe **how Terror Bat interacts with a target**.
+//! Principle: adapters describe **how Terror Bats interacts with a target**.
 //! They never encode project-specific opinions about correctness. Adapters
 //! collect observations; Bat Specs and deterministic oracles decide what
 //! those observations mean.
@@ -131,7 +131,7 @@ pub fn all() -> Vec<AdapterInfo> {
             )],
             &["process.spawn"],
             &[
-                "Child programs are NOT path-confined; only Terror Bat's own built-in operations are worktree-confined.",
+                "Child programs are NOT path-confined; only Terror Bats' own built-in operations are worktree-confined.",
                 "Output capture is bounded (1 MiB retained per stream; totals always counted).",
                 "Secrets must come from environment/configuration, never from receipts. `env` accepts runtime-only `{$secret: NAME}` references: resolved from the execution environment at start; Bat source and canonical spec keep the reference while receipt invocation payloads record env values as [REDACTED]; replay resolves the reference again, and a missing variable fails closed with SECRET_NOT_AVAILABLE. LIMITATION, stated plainly: captured child stdout/stderr and files read back as evidence are byte-verbatim. A target that prints its secret puts that secret into the evidence store. Do not treat capture as sanitised.",
             ],
@@ -473,7 +473,7 @@ pub fn all() -> Vec<AdapterInfo> {
             "planned",
             "Raw TCP for things that are not conveniently HTTP (connect, send/receive bytes, \
              disconnect/reconnect, timeout, half-close, deliberately malformed frames) without \
-             implementing every protocol in Terror Bat. NOT YET A NATIVE BUILTIN: today use \
+             implementing every protocol in Terror Bats. NOT YET A NATIVE BUILTIN: today use \
              command.run with an explicit client or the external adapter protocol.",
             vec![op(
                 "exchange (via command.run today)",
@@ -485,7 +485,7 @@ pub fn all() -> Vec<AdapterInfo> {
             )],
             &["process.spawn", "network (advisory: UNENFORCED)"],
             &[
-                "No protocol semantics in Terror Bat; bytes in, bytes out, oracle judges.",
+                "No protocol semantics in Terror Bats; bytes in, bytes out, oracle judges.",
                 "Half-close where the platform supports it; otherwise documented as unavailable.",
             ],
             &["custom daemons, protocol fuzzing seams, readiness probes"],
@@ -593,7 +593,7 @@ pub fn all() -> Vec<AdapterInfo> {
              adapter opinion is never proof (a lying adapter cannot forge PROVEN). See docs/external-adapter-v1.md.",
             vec![op(
                 "execute (supervised one-shot JSONL)",
-                "Terror Bat supervises the adapter process; describe/execute are bounded, schema-checked, and content-addressed into provenance.",
+                "Terror Bats supervises the adapter process; describe/execute are bounded, schema-checked, and content-addressed into provenance.",
                 &[
                     "bindings file (--adapters)",
                     "declared requires/forbids covering adapter needs + process.spawn",

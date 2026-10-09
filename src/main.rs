@@ -1,4 +1,4 @@
-//! Terror Bat CLI: spec identity (M1) and disposable-worktree Bat execution
+//! Terror Bats CLI: spec identity (M1) and disposable-worktree Bat execution
 //! (M3/M4). Exit codes are stable and documented; the run manifest/receipt is
 //! authoritative, the exit code is a summary.
 

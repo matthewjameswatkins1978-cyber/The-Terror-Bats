@@ -9,7 +9,7 @@ terrorbat adapter inspect filesystem
 terrorbat adapter inspect http --json
 ```
 
-Adapters describe **how Terror Bat interacts with a target**. They never
+Adapters describe **how Terror Bats interacts with a target**. They never
 encode project-specific opinions about correctness. Universal adapters
 collect observations; Bat Specs and deterministic oracles decide what those
 observations mean.
@@ -122,7 +122,7 @@ closed with `SECRET_NOT_AVAILABLE`.
 
 The explicit limitation: captured child stdout/stderr and files read back
 as evidence are byte-verbatim. A target process that prints its secret — to
-stdout, stderr, its own logs, or files Terror Bat later reads — discloses
+stdout, stderr, its own logs, or files Terror Bats later reads — discloses
 that secret into the evidence store. Arbitrary literal credentials in Bat
 source, argv, stdin, or other authored fields are not protected by the
 environment-reference mechanism, and the heuristic argv redaction is not a

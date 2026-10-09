@@ -1,4 +1,4 @@
-//! Section M — Terror Bat self-attack (lite).
+//! Section M — Terror Bats self-attack (lite).
 //!
 //! The framework attacks its own crucial invariants through the real
 //! pipeline (specs → worktrees → supervisor → evidence → receipts), not

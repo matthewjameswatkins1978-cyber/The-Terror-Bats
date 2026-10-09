@@ -1,6 +1,6 @@
 # Bat Spec v0 (M0)
 
-The Bat Spec is the declarative definition of one Terror Bat experiment. It is data, not code. Complex behaviour belongs in adapters, never here.
+The Bat Spec is the declarative definition of one Terror Bats experiment. It is data, not code. Complex behaviour belongs in adapters, never here.
 
 Deliberate exclusions (Constitution 16):
 
@@ -46,7 +46,7 @@ A claim is a falsifiable statement about the system under test. Rules:
 
 - The claim describes **system behaviour**, not test outcomes.
 - The Bat attacks the claim; the oracle judges whether the attack falsified it.
-- Claims are written so that "the attack did not falsify it" is a meaningful result (oracle result `NotFalsified`, receipt verdict `NOT OBSERVED`), not a proof of correctness. Terror Bat never claims a system is *good* — only what attacks showed.
+- Claims are written so that "the attack did not falsify it" is a meaningful result (oracle result `NotFalsified`, receipt verdict `NOT OBSERVED`), not a proof of correctness. Terror Bats never claims a system is *good* — only what attacks showed.
 
 ## 3. Capabilities
 
