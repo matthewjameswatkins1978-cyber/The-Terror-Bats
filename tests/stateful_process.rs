@@ -3,7 +3,7 @@ mod common;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
@@ -1029,4 +1029,185 @@ fn cleanup_names_owned_descendant() {
     );
     #[cfg(not(unix))]
     assert_eq!(obs.method, "windows-job-membership-not-enumerated");
+}
+
+// --- Root-exited / live-descendant supervision (round 4) ------------------
+//
+// The supervised parent exits at once while an owned heir keeps running
+// inside the same process group / Job. The heir self-destructs after 30s:
+// that is the EXTERNAL watchdog bounding every test independently of Terror
+// Bats' own timeouts — a supervision hang fails slowly, never strands CI.
+
+fn reserve_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("ephemeral port");
+    listener.local_addr().expect("port").port()
+}
+fn port_alive(port: u16) -> bool {
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
+    TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+}
+fn poll_port(port: u16, want_alive: bool) -> bool {
+    for _ in 0..25 {
+        if port_alive(port) == want_alive {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    port_alive(port) == want_alive
+}
+/// Best-effort Drop guard: run owned-group cleanup even when the test body
+/// failed first. Idempotent; the 30s fixture self-destruct is the backstop.
+struct HeirGuard<'a> {
+    registry: &'a RefCell<ProcessRegistry>,
+    port: u16,
+}
+impl Drop for HeirGuard<'_> {
+    fn drop(&mut self) {
+        if port_alive(self.port) {
+            let _ = self.registry.borrow_mut().cleanup();
+        }
+    }
+}
+fn heir_port_from(stdout: &[u8]) -> u16 {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("HEIR_PORT:"))
+        .and_then(|s| s.trim().parse().ok())
+        .expect("heir announced its liveness port")
+}
+
+#[test]
+fn process_wait_returns_despite_inherited_pipes_and_kill_reaps_heir() {
+    use terrorbat::supervisor::ExecutionStatus;
+    // Test A: the heir INHERITS the supervisor's capture pipes and outlives
+    // its parent. wait/observe must stay bounded; kill must reap the heir.
+    let temp = TempDir::new("process-heir-pipes");
+    let registry = RefCell::new(ProcessRegistry::new("heir-pipes-execution"));
+    let port = reserve_port();
+    let port_arg = port.to_string();
+    start(
+        &registry,
+        &temp.path,
+        "heir-parent",
+        &["pipe-heir", &port_arg, "30"],
+        None,
+    );
+    let _guard = HeirGuard {
+        registry: &registry,
+        port,
+    };
+    // The root exited, but the heir holds the pipes: wait must report the
+    // exit within its budget instead of hanging on inherited-pipe EOF.
+    let waited = invoke(
+        &registry,
+        &temp.path,
+        "wait",
+        json!({"handle":"heir-parent","timeout_ms":5000}),
+        1,
+    )
+    .expect("wait returns");
+    assert_eq!(
+        waited.status,
+        ExecutionStatus::Completed,
+        "root exit, not timeout"
+    );
+    assert_eq!(waited.exit_code, Some(0));
+    assert!(
+        waited.wall_time < Duration::from_secs(5),
+        "wait stayed bounded"
+    );
+    // Observe the captured bytes without hanging; extract the heir's port.
+    let observed = invoke(
+        &registry,
+        &temp.path,
+        "observe",
+        json!({"handle":"heir-parent"}),
+        2,
+    )
+    .expect("observe returns");
+    let text = String::from_utf8_lossy(&observed.stdout);
+    assert!(text.contains("PARENT_EXITING"), "parent output captured");
+    assert_eq!(heir_port_from(&observed.stdout), port);
+    // OS-level proof the heir outlived its parent: socket, not receipt.
+    assert!(
+        poll_port(port, true),
+        "heir must be alive after parent exit"
+    );
+    // The incomplete drain is reported honestly, not manufactured complete.
+    let report = registry.borrow().report();
+    let generation = &report
+        .handles
+        .iter()
+        .find(|h| h.handle == "heir-parent")
+        .expect("handle")
+        .generations[0];
+    assert!(
+        generation
+            .events
+            .iter()
+            .any(|e| e.event == "output_drain_incomplete"),
+        "incomplete drain must be recorded"
+    );
+    drop(report);
+    // Kill must terminate the pipe-holding heir through the owned group.
+    invoke(
+        &registry,
+        &temp.path,
+        "kill",
+        json!({"handle":"heir-parent","timeout_ms":10000}),
+        3,
+    )
+    .expect("kill succeeds");
+    assert!(
+        poll_port(port, false),
+        "kill must reap the pipe-holding heir"
+    );
+}
+
+#[test]
+fn process_kill_reaps_group_whose_root_already_exited() {
+    use terrorbat::supervisor::ExecutionStatus;
+    // Test B: the heir's stdio is nulled, so pumps see EOF at parent exit —
+    // but the heir still lives in the owned group. Kill/cleanup must not
+    // infer an empty group from a dead root.
+    let temp = TempDir::new("process-heir-null");
+    let registry = RefCell::new(ProcessRegistry::new("heir-null-execution"));
+    let port = reserve_port();
+    let port_arg = port.to_string();
+    start(
+        &registry,
+        &temp.path,
+        "null-parent",
+        &["null-heir", &port_arg, "30"],
+        None,
+    );
+    let _guard = HeirGuard {
+        registry: &registry,
+        port,
+    };
+    let waited = invoke(
+        &registry,
+        &temp.path,
+        "wait",
+        json!({"handle":"null-parent","timeout_ms":5000}),
+        1,
+    )
+    .expect("wait returns");
+    assert_eq!(waited.status, ExecutionStatus::Completed);
+    assert_eq!(waited.exit_code, Some(0));
+    // Precondition, proved at OS level: the group is NOT empty.
+    assert!(
+        poll_port(port, true),
+        "heir must be alive after parent exit"
+    );
+    // Kill must terminate the live group, not claim success over a corpse.
+    invoke(
+        &registry,
+        &temp.path,
+        "kill",
+        json!({"handle":"null-parent","timeout_ms":10000}),
+        2,
+    )
+    .expect("kill succeeds");
+    assert!(poll_port(port, false), "kill must reap the surviving heir");
 }

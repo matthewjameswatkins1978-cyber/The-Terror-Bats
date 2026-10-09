@@ -91,6 +91,58 @@ fn main() {
                 let _ = stream;
             }
         }
+        Some("pipe-heir") => {
+            // Supervised parent: spawns an heir that INHERITS our stdout and
+            // stderr (the supervisor's capture pipes), announces, and exits
+            // 0 immediately. The heir outlives the parent inside the owned
+            // process group / Job. Args: port die_after_secs.
+            let port: u16 = args.next().expect("port").parse().unwrap();
+            let die_after: u64 = args.next().expect("die_after").parse().unwrap();
+            let exe = std::env::current_exe().unwrap();
+            // The process supervisor under test owns and reaps this child group.
+            #[allow(clippy::zombie_processes)]
+            Command::new(exe)
+                .arg("pipe-heir-child")
+                .arg(port.to_string())
+                .arg(die_after.to_string())
+                .stdin(Stdio::null())
+                .spawn()
+                .unwrap();
+            println!("PARENT_EXITING");
+            io::stdout().flush().unwrap();
+        }
+        Some("pipe-heir-child") => {
+            // Inherits the supervisor's capture pipes: keeps them open after
+            // the parent exits. Binds a liveness port, announces over the
+            // inherited pipe, then self-destructs after die_after_secs — the
+            // external watchdog bounding every test even if supervision hangs.
+            heir_child(&mut args);
+        }
+        Some("null-heir") => {
+            // Like pipe-heir, but the heir's stdio is nulled: pumps see EOF
+            // at parent exit while the heir still lives in the owned group.
+            let port: u16 = args.next().expect("port").parse().unwrap();
+            let die_after: u64 = args.next().expect("die_after").parse().unwrap();
+            let exe = std::env::current_exe().unwrap();
+            // The process supervisor under test owns and reaps this child group.
+            #[allow(clippy::zombie_processes)]
+            Command::new(exe)
+                .arg("null-heir-child")
+                .arg(port.to_string())
+                .arg(die_after.to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            println!("PARENT_EXITING");
+            io::stdout().flush().unwrap();
+        }
+        Some("null-heir-child") => {
+            // Null stdio: nothing observable through capture. The liveness
+            // port is the only OS-level proof of life. Self-destruct bounds.
+            heir_child(&mut args);
+        }
         Some("child") => {
             let exe = std::env::current_exe().unwrap();
             // The process supervisor under test owns and reaps this child group.
@@ -113,4 +165,18 @@ fn main() {
         },
         _ => std::process::exit(2),
     }
+}
+
+fn heir_child(args: &mut std::iter::Skip<std::env::Args>) {
+    // Shared heir body: bind a 127.0.0.1 liveness listener (a successful
+    // connect proves OS-level aliveness independent of any receipt claim),
+    // announce over stdout when it is inherited, then exit on our own after
+    // die_after_secs so no test can strand a survivor past its watchdog.
+    let port: u16 = args.next().expect("heir port").parse().unwrap();
+    let die_after: u64 = args.next().expect("heir die_after").parse().unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", port)).expect("heir liveness port");
+    println!("HEIR_PORT:{port}");
+    io::stdout().flush().unwrap();
+    let _ = listener;
+    thread::sleep(Duration::from_secs(die_after));
 }

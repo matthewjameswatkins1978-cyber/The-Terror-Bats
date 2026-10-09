@@ -25,6 +25,10 @@ const OUT_MAX: usize = 1_048_576;
 const OUT_LIMIT_MAX: usize = 16_777_216;
 const INPUT_MAX: usize = 1_048_576;
 const POLL: Duration = Duration::from_millis(10);
+const DRAIN_BUDGET: Duration = Duration::from_millis(500);
+/// Shared deadline for harvesting output-drain threads after root exit.
+/// A live descendant holding inherited pipes must not defeat an operation
+/// deadline; root exit and pipe EOF are distinct facts.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProcessRuntimeReport {
     pub handles: Vec<HandleReport>,
@@ -580,12 +584,19 @@ impl ProcessRegistry {
         index: usize,
     ) -> Result<StepOutcome, StepError> {
         let g = self.active(name)?;
-        if !refresh(g)? {
-            return Ok(done(Duration::ZERO));
-        }
+        let root_running = refresh(g)?;
         #[cfg(unix)]
         {
             use command_group::{Signal, UnixChildExt};
+            // Graceful SIGTERM goes to the owned group, and a reaped root
+            // with live members still deserves it: skip only a group proven
+            // empty, never merely a dead root.
+            let pid = g.report.pid;
+            let occupied =
+                root_running || pid.is_some_and(|pgid| !owned_group_live_members(pgid).is_empty());
+            if !occupied {
+                return Ok(done(Duration::ZERO));
+            }
             g.running
                 .child
                 .signal(Signal::SIGTERM)
@@ -602,7 +613,7 @@ impl ProcessRegistry {
         }
         #[cfg(not(unix))]
         {
-            let _ = (phase, index);
+            let _ = (phase, index, root_running);
             Err(StepError::Unsupported(
                 "process.terminate unsupported on Windows; use process.kill".into(),
             ))
@@ -617,16 +628,22 @@ impl ProcessRegistry {
     ) -> Result<StepOutcome, StepError> {
         let g = self.active(name)?;
         let start = Instant::now();
-        if refresh(g)? {
-            g.running
-                .child
-                .kill()
-                .map_err(|e| ioerr(format!("PROCESS_KILL_FAILED: {e}")))?;
+        let root_running = refresh(g)?;
+        // Strike the OWNED GROUP, not just a live root: the root may have
+        // exited while descendants remain in the group/Job. A failed strike
+        // against a live root is a genuine error; against a dead root with
+        // no members it is a harmless no-op.
+        if !strike_group(&mut g.running.child, g.report.pid, root_running) && root_running {
+            return Err(ioerr(format!(
+                "PROCESS_KILL_FAILED: `{name}` group termination refused"
+            )));
+        }
+        if root_running || g.report.termination.is_none() {
             g.report.termination = Some("forced_kill_requested".into());
             event(&mut g.report, phase, index, "kill_requested", None)
         }
         loop {
-            if !refresh(g)? {
+            if !refresh(g)? && group_is_quiet(g.report.pid) {
                 g.report.termination = Some("killed".into());
                 return Ok(done(start.elapsed()));
             }
@@ -717,17 +734,26 @@ impl ProcessRegistry {
         self.cleanup.descendants.extend(seen);
         let end = Instant::now() + Duration::from_secs(4);
         for (name, h) in &mut self.handles {
-            if let Some(g) = h.generations.last_mut()
-                && refresh(g).unwrap_or(true)
-            {
+            // Graceful termination goes to groups that may still hold
+            // members — a dead root alone never proves an empty group.
+            if let Some(g) = h.generations.last_mut() {
+                let running = refresh(g).unwrap_or(true);
                 #[cfg(unix)]
                 {
-                    use command_group::{Signal, UnixChildExt};
-                    if g.running.child.signal(Signal::SIGTERM).is_ok() {
-                        g.report.termination = Some("cleanup_graceful_requested".into());
-                        event(&mut g.report, "cleanup", 0, "terminate", None)
+                    let occupied = running
+                        || g.report
+                            .pid
+                            .is_some_and(|pgid| !owned_group_live_members(pgid).is_empty());
+                    if occupied {
+                        use command_group::{Signal, UnixChildExt};
+                        if g.running.child.signal(Signal::SIGTERM).is_ok() {
+                            g.report.termination = Some("cleanup_graceful_requested".into());
+                            event(&mut g.report, "cleanup", 0, "terminate", None)
+                        }
                     }
                 }
+                #[cfg(not(unix))]
+                let _ = running;
             }
             let _ = name;
         }
@@ -743,20 +769,24 @@ impl ProcessRegistry {
             thread::sleep(POLL)
         }
         for (name, h) in &mut self.handles {
+            // Forced group/Job termination even for reaped roots: Unix is
+            // scan-gated inside strike_group, Windows TerminateJobObject is
+            // a safe no-op on an empty job.
             if let Some(g) = h.generations.last_mut() {
-                if refresh(g).unwrap_or(true) {
-                    if g.running.child.kill().is_ok() {
+                let running = refresh(g).unwrap_or(true);
+                if running || !group_is_quiet(g.report.pid) {
+                    if strike_group(&mut g.running.child, g.report.pid, running) {
                         self.cleanup.forced.push(g.report.process_identity.clone());
                         g.report.termination = Some("cleanup_forced_kill_requested".into());
                         event(&mut g.report, "cleanup", 0, "force_kill", None)
-                    } else {
+                    } else if running {
                         self.cleanup
                             .errors
                             .push(format!("{}: kill failed", g.report.process_identity))
                     }
                 }
-                let _ = name;
             }
+            let _ = name;
         }
         while Instant::now() < end {
             if self.handles.values_mut().all(|h| {
@@ -770,7 +800,10 @@ impl ProcessRegistry {
         }
         for (name, h) in &mut self.handles {
             if let Some(g) = h.generations.last_mut() {
-                if refresh(g).unwrap_or(true) {
+                // A reaped root with live owned members is a survivor, not a
+                // success: Unix verifies via scan, elsewhere root state plus
+                // the applied Job termination is all the mechanism offers.
+                if refresh(g).unwrap_or(true) || !group_is_quiet(g.report.pid) {
                     self.cleanup
                         .survivors
                         .push(g.report.process_identity.clone());
@@ -1043,8 +1076,21 @@ fn observe_owned_descendants(root_pid: Option<u32>) -> (&'static str, Vec<u32>) 
 
 /// Best-effort /proc scan for live members of the owned process group.
 /// Reads only numeric /proc entries; silently skips vanished processes.
+/// Zombies (state Z) are members for observation but are excluded from the
+/// liveness variant used for kill decisions: init reaps orphaned zombies
+/// independently, and they hold no pipes.
 #[cfg(unix)]
 fn owned_group_members(pgid: u32) -> Vec<u32> {
+    scan_group_members(pgid, false)
+}
+/// Owned group members that are actually alive (non-zombie). Kill and
+/// quiescence decisions use this; the observation report keeps zombies.
+#[cfg(unix)]
+fn owned_group_live_members(pgid: u32) -> Vec<u32> {
+    scan_group_members(pgid, true)
+}
+#[cfg(unix)]
+fn scan_group_members(pgid: u32, live_only: bool) -> Vec<u32> {
     let mut out = Vec::new();
     let Ok(dir) = std::fs::read_dir("/proc") else {
         return out;
@@ -1066,7 +1112,10 @@ fn owned_group_members(pgid: u32) -> Vec<u32> {
             continue;
         };
         let mut fields = after.split_whitespace();
-        let _state = fields.next();
+        let state = fields.next().unwrap_or("");
+        if live_only && state == "Z" {
+            continue;
+        }
         let _ppid = fields.next();
         if fields
             .next()
@@ -1080,12 +1129,104 @@ fn owned_group_members(pgid: u32) -> Vec<u32> {
     out
 }
 
+/// Attempt owned-group/Job termination regardless of root state. A reaped
+/// root does not imply an empty group: live members keep pipes open and
+/// must be struck through the group boundary, not the dead root.
+/// Returns true when a termination signal was actually issued.
+fn strike_group(child: &mut GroupChild, root_pid: Option<u32>, root_running: bool) -> bool {
+    #[cfg(unix)]
+    {
+        let Some(pgid) = root_pid else {
+            return false;
+        };
+        // Scan-gated killpg: signalling a bare pgid after full group death
+        // could hit a reused id. Only strike when the root still runs or
+        // the scan proves live members remain.
+        if !root_running && owned_group_live_members(pgid).is_empty() {
+            return false;
+        }
+        // GroupChild::kill issues killpg(SIGKILL): the whole owned group,
+        // or ESRCH when the last member vanished in the race window.
+        child.kill().is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root_pid, root_running);
+        // TerminateJobObject on an empty job is a harmless no-op, so always
+        // attempt: the handle stays valid after root exit and reaches live
+        // job members the root-state check cannot see.
+        child.kill().is_ok()
+    }
+}
+/// True when no owned-group activity remains to terminate. Unix verifies via
+/// a zombie-filtered scan; elsewhere only the root state is observable.
+fn group_is_quiet(root_pid: Option<u32>) -> bool {
+    #[cfg(unix)]
+    {
+        match root_pid {
+            Some(pgid) => owned_group_live_members(pgid).is_empty(),
+            None => true,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root_pid;
+        true
+    }
+}
+/// Harvest a finished drain thread without blocking. Unfinished handles stay
+/// put; a later refresh retries them.
+fn drain_poll(slot: &mut Option<JoinHandle<()>>) {
+    if slot.as_ref().is_some_and(|h| h.is_finished())
+        && let Some(join) = slot.take()
+    {
+        let _ = join.join();
+    }
+}
+/// Harvest drain threads under a shared deadline. Root exit must not wait
+/// without bound for inherited-pipe EOF; unfinished handles stay put and an
+/// `output_drain_incomplete` event records the distinction exactly once.
+fn drain_bounded(g: &mut Generation) {
+    let deadline = Instant::now() + DRAIN_BUDGET;
+    for slot in [
+        &mut g.running.stdin_join,
+        &mut g.running.out_join,
+        &mut g.running.err_join,
+    ] {
+        while slot.as_ref().is_some_and(|h| !h.is_finished()) {
+            if Instant::now() >= deadline {
+                if !g
+                    .report
+                    .events
+                    .iter()
+                    .any(|e| e.event == "output_drain_incomplete")
+                {
+                    event(
+                        &mut g.report,
+                        "refresh",
+                        0,
+                        "output_drain_incomplete",
+                        Some("root exited while output-drain threads still run; a live descendant may hold inherited pipes".into()),
+                    );
+                }
+                return;
+            }
+            thread::sleep(POLL);
+        }
+        drain_poll(slot);
+    }
+}
 fn refresh(g: &mut Generation) -> Result<bool, StepError> {
     if g.report
         .termination
         .as_deref()
         .is_some_and(|s| ["exited", "killed", "cleanup_terminated"].contains(&s))
     {
+        // Terminal root, but drain threads may still run (inherited pipes)
+        // or finish later: harvest without blocking so evidence keeps up.
+        drain_poll(&mut g.running.stdin_join);
+        drain_poll(&mut g.running.out_join);
+        drain_poll(&mut g.running.err_join);
         return Ok(false);
     }
     match g.running.child.try_wait() {
@@ -1102,15 +1243,10 @@ fn refresh(g: &mut Generation) -> Result<bool, StepError> {
                 g.report.termination = Some("exited".into());
             }
             g.running.stdin.take();
-            if let Some(join) = g.running.stdin_join.take() {
-                let _ = join.join();
-            }
-            if let Some(join) = g.running.out_join.take() {
-                let _ = join.join();
-            }
-            if let Some(join) = g.running.err_join.take() {
-                let _ = join.join();
-            }
+            // Bounded: a live descendant holding inherited pipes must not
+            // defeat the caller's deadline. Root exit and pipe EOF stay
+            // distinct; incompleteness is recorded, never manufactured.
+            drain_bounded(g);
             Ok(false)
         }
         Ok(None) => Ok(true),

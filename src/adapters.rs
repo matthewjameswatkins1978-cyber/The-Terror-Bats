@@ -133,7 +133,7 @@ pub fn all() -> Vec<AdapterInfo> {
             &[
                 "Child programs are NOT path-confined; only Terror Bat's own built-in operations are worktree-confined.",
                 "Output capture is bounded (1 MiB retained per stream; totals always counted).",
-                "Secrets must come from environment/configuration, never from receipts. `env` accepts runtime-only `{$secret: NAME}` references: resolved from the execution environment at start; Bat source, canonical spec, and receipt invocation payloads keep the reference (receipt env values are stored as [REDACTED]); replay resolves the reference again, and a missing variable fails closed with SECRET_NOT_AVAILABLE. LIMITATION, stated plainly: captured child stdout/stderr and files read back as evidence are byte-verbatim. A target that prints its secret puts that secret into the evidence store. Do not treat capture as sanitised.",
+                "Secrets must come from environment/configuration, never from receipts. `env` accepts runtime-only `{$secret: NAME}` references: resolved from the execution environment at start; Bat source and canonical spec keep the reference while receipt invocation payloads record env values as [REDACTED]; replay resolves the reference again, and a missing variable fails closed with SECRET_NOT_AVAILABLE. LIMITATION, stated plainly: captured child stdout/stderr and files read back as evidence are byte-verbatim. A target that prints its secret puts that secret into the evidence store. Do not treat capture as sanitised.",
             ],
             &[
                 "program: cargo, args: [test]",
