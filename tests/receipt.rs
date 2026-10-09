@@ -511,14 +511,22 @@ fn replay_with_missing_commit_explains_itself() {
     let bat = write_spec(&specs, "falsify.yaml", &falsifying_bat());
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     // Replace the repository with a fresh one that lacks the pinned commit.
+    // NOTE: do not reuse make_repo here. Two identical back-to-back commits in
+    // the same second share a hash (proven), which would leave the pinned commit
+    // present. Distinct initial content guarantees absence, independent of timing.
     std::fs::remove_dir_all(&repo).expect("remove repo");
-    make_repo(&repo);
-    // Same-second identical commits share a hash (proven locally), which would
-    // leave the pinned commit present in the fresh history. Amend the fresh
-    // history to a distinct tree so the pinned commit is truly absent.
-    std::fs::write(repo.join("README.md"), "replacement repo\n").expect("diverge marker");
+    std::fs::create_dir_all(&repo).expect("repo dir");
+    common::git(&repo, &["init", "-q"]);
+    common::git(&repo, &["config", "user.email", "terrorbat@test.local"]);
+    common::git(&repo, &["config", "user.name", "Terror Bat Test"]);
+    std::fs::write(repo.join("README.md"), "unrelated replacement repo\n").expect("write readme");
     common::git(&repo, &["add", "."]);
-    common::git(&repo, &["commit", "-q", "--amend", "-m", "initial"]);
+    common::git(&repo, &["commit", "-q", "-m", "initial"]);
+    let fresh = common::git(&repo, &["rev-parse", "HEAD"]);
+    assert_ne!(
+        fresh, out.manifest.target.commit,
+        "fresh repo must not contain the pinned commit"
+    );
     let err = receipt::replay(&out.receipt.receipt_id, Some(store)).expect_err("must fail");
     let msg = err.to_string();
     assert!(msg.contains("no longer exists in"), "{msg}");
