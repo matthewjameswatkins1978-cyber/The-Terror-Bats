@@ -242,3 +242,67 @@ fn stale_marker_without_path_entry_removes_nothing() {
     report(&out, "UNTOUCHED", true);
     report(&out, "MARKER_GONE", true);
 }
+
+#[test]
+fn mismatched_scope_marker_authorizes_no_removal() {
+    // Cross-scope ownership violation: a marker claiming User ownership
+    // must never authorize a Process-scope removal (and symmetrically the
+    // guard is a single scope comparison). Fully hermetic: the real User
+    // PATH is never written; only the session Process PATH is touched.
+    let dir = TempInstall::fresh("xscope");
+    let dir = dir.path.display().to_string();
+    let out = session(&format!(
+        "$ErrorActionPreference='Stop'; \
+         $env:Path += \";{dir}\"; \
+         Set-Content -NoNewline -Encoding ascii '{dir}\\.terrorbats-path-added' 'scope=User'; \
+         {uninstall}; \
+         'INPATH=' + (($env:Path -split ';') -contains '{dir}'); \
+         'MARKER_KEPT=' + (Test-Path '{dir}\\.terrorbats-path-added')",
+        uninstall = uninstall_cmd(&dir),
+    ));
+    report(&out, "INPATH", true);
+    report(&out, "MARKER_KEPT", true);
+}
+
+#[test]
+fn unrecognised_marker_authorizes_no_removal() {
+    // Old-format and tampered markers prove nothing; PATH is preserved.
+    let dir = TempInstall::fresh("unkmarker");
+    let dir = dir.path.display().to_string();
+    let out = session(&format!(
+        "$ErrorActionPreference='Stop'; \
+         $before = $env:Path; \
+         $env:Path += \";{dir}\"; \
+         Set-Content -NoNewline -Encoding ascii '{dir}\\.terrorbats-path-added' 'appended by install.ps1'; \
+         {uninstall}; \
+         'UNTOUCHED=' + (($env:Path -ceq ($before + \";{dir}\"))); \
+         'MARKER_KEPT=' + (Test-Path '{dir}\\.terrorbats-path-added')",
+        uninstall = uninstall_cmd(&dir),
+    ));
+    report(&out, "UNTOUCHED", true);
+    report(&out, "MARKER_KEPT", true);
+}
+
+#[test]
+fn weird_path_separators_round_trip() {
+    // Empty separators (A;;B;) must survive an owned add/remove cycle.
+    // The session PATH keeps its inherited entries (doctor still resolves
+    // its tools); only leading empties are injected.
+    let dir = TempInstall::fresh("weird");
+    let dir = dir.path.display().to_string();
+    let out = session(&format!(
+        "$ErrorActionPreference='Stop'; \
+         $env:Path = 'A;;' + $env:Path; \
+         $before = $env:Path; \
+         {install}; \
+         'ADDED=' + (($env:Path -split ';') -contains '{dir}'); \
+         {uninstall}; \
+         'RESTORED=' + ($env:Path -ceq $before); \
+         'MARKER_GONE=' + (-not (Test-Path '{dir}\\.terrorbats-path-added'))",
+        install = install_cmd(&dir, ""),
+        uninstall = uninstall_cmd(&dir),
+    ));
+    report(&out, "ADDED", true);
+    report(&out, "RESTORED", true);
+    report(&out, "MARKER_GONE", true);
+}

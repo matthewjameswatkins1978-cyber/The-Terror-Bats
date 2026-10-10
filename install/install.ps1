@@ -7,9 +7,10 @@
   into a user-local directory. No administrator rights required.
   Never modifies PATH unless -AddToUserPath is explicitly passed,
   and reports exactly what changed when it does. When the installer
-  appends the directory itself, it leaves an ownership marker
-  (.terrorbats-path-added) so the uninstaller only ever removes PATH
-  entries this installer added — never pre-existing ones. Finishes with
+  appends the directory itself, it leaves a scope-bound ownership marker
+  (.terrorbats-path-added, content scope=User/Process) so the uninstaller
+  only ever removes PATH entries this installer added, in the same scope
+  — never pre-existing ones and never across scopes. Finishes with
   `terrorbats --version` and `terrorbats doctor` as install proof.
 
 .PARAMETER PathScope
@@ -62,9 +63,11 @@ if ($AddToUserPath) {
     $scopeEntries = @($scopePath -split ';' | Where-Object { $_ -ne '' })
     if ($scopeEntries -notcontains $InstallDir) {
         [Environment]::SetEnvironmentVariable('Path', "$scopePath;$InstallDir", $PathScope)
-        # Ownership is recorded only after the append succeeds; with
-        # $ErrorActionPreference='Stop' a failed write aborts before the marker.
-        Set-Content -NoNewline -Encoding ascii (Join-Path $InstallDir '.terrorbats-path-added') "appended by install.ps1"
+        # Ownership is recorded only after the append succeeds, and is bound
+        # to the exact scope modified; with $ErrorActionPreference='Stop' a
+        # failed write aborts before the marker. A marker never authorises
+        # removal in any other scope.
+        Set-Content -NoNewline -Encoding ascii (Join-Path $InstallDir '.terrorbats-path-added') "scope=$PathScope"
         Write-Host "PATH CHANGED: appended '$InstallDir' to the $PathScope Path environment variable."
         Write-Host "Open a new terminal for the change to take effect."
     } else {
