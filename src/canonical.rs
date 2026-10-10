@@ -1,7 +1,7 @@
 //! Semantic projection and RFC 8785 canonical JSON.
 //!
 //! The canonical JSON bytes are part of the M1 contract: they are inspectable
-//! (`terrorbat spec canonical`) and are what gets hashed. No Unicode
+//! (`terrorbats spec canonical`) and are what gets hashed. No Unicode
 //! normalisation is performed; parsed string content is canonicalised exactly
 //! as represented by the resolved semantic structure.
 

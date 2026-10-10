@@ -1,7 +1,7 @@
 //! Built-in primitive tests: Windows path safety (absolute/UNC/drive/`..`/
 //! junction escape), fs payload rules, and command dispatch errors.
 //!
-//! Honesty note: these tests prove Terror Bat's *built-in* path validation.
+//! Honesty note: these tests prove Terror Bats' *built-in* path validation.
 //! They do not prove sandboxing of arbitrary child processes — nothing in
 //! worktree mode does.
 
@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::TempDir;
-use terrorbat::builtins::{StepCtx, StepError, dispatch, resolve_in_worktree};
+use terrorbats::builtins::{StepCtx, StepError, dispatch, resolve_in_worktree};
 
 fn ctx<'a>(worktree: &'a Path, spec_dir: &'a Path) -> StepCtx<'a> {
     StepCtx {

@@ -1,4 +1,4 @@
-//! Terror Bat CLI: spec identity (M1) and disposable-worktree Bat execution
+//! Terror Bats CLI: spec identity (M1) and disposable-worktree Bat execution
 //! (M3/M4). Exit codes are stable and documented; the run manifest/receipt is
 //! authoritative, the exit code is a summary.
 
@@ -6,13 +6,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use terrorbat::ParamOverrides;
+use terrorbats::ParamOverrides;
 
 #[derive(Parser)]
 #[command(
-    name = "terrorbat",
+    name = "terrorbats",
     version,
-    about = "Terror Bat — falsification and assurance framework"
+    about = "The Terror Bats Framework — falsification and assurance framework"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -101,6 +101,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Print shell completions to stdout (convenience only; never required
+    /// at runtime — redirect to your shell's completion directory).
+    Completions {
+        /// Shell to generate completions for.
+        shell: CompletionShell,
+    },
+    /// Print a man page (roff) generated from the live CLI definition.
+    /// Redirect into `share/man/man1/terrorbats.1` for release bundles.
+    Man,
+}
+
+/// Shells with first-class completion scripts. Convenience only.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum CompletionShell {
+    Powershell,
+    Bash,
+    Zsh,
+    Fish,
 }
 
 #[derive(Subcommand)]
@@ -108,7 +126,7 @@ enum AdapterCommand {
     /// Show one adapter's operations, inputs, outputs, constraints,
     /// examples, and platform limitations.
     Inspect {
-        /// Adapter name (see `terrorbat adapters`).
+        /// Adapter name (see `terrorbats adapters`).
         name: String,
         /// Machine-readable output.
         #[arg(long)]
@@ -219,7 +237,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("terrorbat: {message}");
+            eprintln!("terrorbats: {message}");
             ExitCode::from(2)
         }
     }
@@ -230,14 +248,14 @@ fn run() -> Result<u8, String> {
     match cli.command {
         Command::Spec { command } => match command {
             SpecCommand::Check { file } => {
-                let human_id = terrorbat::check_spec_file(&file).map_err(|e| e.to_string())?;
+                let human_id = terrorbats::check_spec_file(&file).map_err(|e| e.to_string())?;
                 println!("OK  {human_id}");
                 Ok(0)
             }
             SpecCommand::Id { file, param } => {
                 let overrides = ParamOverrides::parse(&param).map_err(|e| e.to_string())?;
                 let identified =
-                    terrorbat::identify_spec_file(&file, &overrides).map_err(|e| e.to_string())?;
+                    terrorbats::identify_spec_file(&file, &overrides).map_err(|e| e.to_string())?;
                 let ids = identified.identities;
                 println!("bat     {}", ids.bat);
                 println!("claim   {}", ids.claim);
@@ -248,7 +266,7 @@ fn run() -> Result<u8, String> {
             SpecCommand::Canonical { file, param } => {
                 let overrides = ParamOverrides::parse(&param).map_err(|e| e.to_string())?;
                 let identified =
-                    terrorbat::identify_spec_file(&file, &overrides).map_err(|e| e.to_string())?;
+                    terrorbats::identify_spec_file(&file, &overrides).map_err(|e| e.to_string())?;
                 println!("{}", identified.canonical_json);
                 Ok(0)
             }
@@ -259,7 +277,7 @@ fn run() -> Result<u8, String> {
                     open_store(Some(root))?;
                 }
                 let identified =
-                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                    terrorbats::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
                 if json {
                     let text = serde_json::to_string_pretty(&identified.to_json())
                         .map_err(|e| e.to_string())?;
@@ -274,7 +292,7 @@ fn run() -> Result<u8, String> {
                     open_store(Some(root))?;
                 }
                 let identified =
-                    terrorbat::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
+                    terrorbats::pack::identify_pack_file(&pack).map_err(|e| e.to_string())?;
                 if json {
                     let text = serde_json::to_string_pretty(&identified.to_json())
                         .map_err(|e| e.to_string())?;
@@ -296,7 +314,7 @@ fn run() -> Result<u8, String> {
                 adapters,
                 json,
             } => {
-                let opts = terrorbat::campaign::CampaignOptions {
+                let opts = terrorbats::campaign::CampaignOptions {
                     pack_path: pack,
                     repo,
                     store_root: store,
@@ -304,20 +322,20 @@ fn run() -> Result<u8, String> {
                     stop_on_proven,
                 };
                 let out =
-                    terrorbat::campaign::run_campaign_with_adapters(&opts, adapters.as_deref())
+                    terrorbats::campaign::run_campaign_with_adapters(&opts, adapters.as_deref())
                         .map_err(|e| e.to_string())?;
                 if json {
                     let text =
                         serde_json::to_string_pretty(&out.campaign).map_err(|e| e.to_string())?;
                     println!("{text}");
                 } else {
-                    let caps = terrorbat::presentation::detect_capabilities();
+                    let caps = terrorbats::presentation::detect_capabilities();
                     println!(
                         "{}",
-                        terrorbat::presentation::render_campaign(&out.campaign, &caps)
+                        terrorbats::presentation::render_campaign(&out.campaign, &caps)
                     );
                 }
-                Ok(terrorbat::campaign::exit_code_for_campaign(&out.campaign))
+                Ok(terrorbats::campaign::exit_code_for_campaign(&out.campaign))
             }
         },
         Command::Run {
@@ -328,27 +346,27 @@ fn run() -> Result<u8, String> {
             store,
             json,
         } => {
-            let bindings = terrorbat::adapter::load_bindings(adapters.as_deref())
+            let bindings = terrorbats::adapter::load_bindings(adapters.as_deref())
                 .map_err(|e| e.to_string())?;
-            let opts = terrorbat::runner::RunOptions {
+            let opts = terrorbats::runner::RunOptions {
                 bat_path: bat,
                 repo,
                 store_root: store,
                 overrides: param,
             };
-            let out = terrorbat::runner::run_bat_with_adapters(&opts, bindings.as_ref())
+            let out = terrorbats::runner::run_bat_with_adapters(&opts, bindings.as_ref())
                 .map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&out.receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                let caps = terrorbat::presentation::detect_capabilities();
+                let caps = terrorbats::presentation::detect_capabilities();
                 println!(
                     "{}",
-                    terrorbat::presentation::render_receipt(&out.receipt, &caps)
+                    terrorbats::presentation::render_receipt(&out.receipt, &caps)
                 );
             }
-            Ok(terrorbat::runner::exit_code_for(
+            Ok(terrorbats::runner::exit_code_for(
                 out.manifest.run_status,
                 Some(out.receipt.verdict.as_str()),
             ))
@@ -358,7 +376,7 @@ fn run() -> Result<u8, String> {
                 return inspect_campaign(&id, store, json);
             }
             let store = open_store(store)?;
-            let run_dir = terrorbat::receipt::locate_run(&store, &id)
+            let run_dir = terrorbats::receipt::locate_run(&store, &id)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| {
                     format!(
@@ -366,15 +384,15 @@ fn run() -> Result<u8, String> {
                         store.root().display()
                     )
                 })?;
-            let receipt = terrorbat::receipt::load_receipt(&run_dir).map_err(|e| e.to_string())?;
+            let receipt = terrorbats::receipt::load_receipt(&run_dir).map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                let caps = terrorbat::presentation::detect_capabilities();
+                let caps = terrorbats::presentation::detect_capabilities();
                 println!(
                     "{}",
-                    terrorbat::presentation::render_receipt(&receipt, &caps)
+                    terrorbats::presentation::render_receipt(&receipt, &caps)
                 );
             }
             Ok(0)
@@ -386,7 +404,7 @@ fn run() -> Result<u8, String> {
                 out,
             } => {
                 let store = open_store(store)?;
-                let eref = terrorbat::evidence::EvidenceRef(reference.clone());
+                let eref = terrorbats::evidence::EvidenceRef(reference.clone());
                 let bytes = store.get(&eref).map_err(|e| e.to_string())?;
                 if let Some(path) = out {
                     std::fs::write(&path, &bytes)
@@ -413,73 +431,99 @@ fn run() -> Result<u8, String> {
             json,
         } => {
             let (report, out) =
-                terrorbat::receipt::replay_with_adapters(&id, store, adapters.as_deref())
+                terrorbats::receipt::replay_with_adapters(&id, store, adapters.as_deref())
                     .map_err(|e| e.to_string())?;
             if json {
                 let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                let caps = terrorbat::presentation::detect_capabilities();
+                let caps = terrorbats::presentation::detect_capabilities();
                 println!(
                     "{}",
-                    terrorbat::presentation::render_replay(&report, &out.receipt, &caps)
+                    terrorbats::presentation::render_replay(&report, &out.receipt, &caps)
                 );
             }
-            Ok(terrorbat::runner::exit_code_for(
+            Ok(terrorbats::runner::exit_code_for(
                 out.manifest.run_status,
                 Some(out.receipt.verdict.as_str()),
             ))
         }
         Command::Adapters { json } => {
-            let adapters = terrorbat::adapters::all();
+            let adapters = terrorbats::adapters::all();
             if json {
                 let text = serde_json::to_string_pretty(&adapters).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                let caps = terrorbat::presentation::detect_capabilities();
+                let caps = terrorbats::presentation::detect_capabilities();
                 println!(
                     "{}",
-                    terrorbat::presentation::render_adapters(&adapters, &caps)
+                    terrorbats::presentation::render_adapters(&adapters, &caps)
                 );
             }
             Ok(0)
         }
         Command::Adapter { command } => match command {
             AdapterCommand::Inspect { name, json } => {
-                let info = terrorbat::adapters::find(&name).ok_or_else(|| {
-                    format!("unknown adapter `{name}` (see `terrorbat adapters`)")
+                let info = terrorbats::adapters::find(&name).ok_or_else(|| {
+                    format!("unknown adapter `{name}` (see `terrorbats adapters`)")
                 })?;
                 if json {
                     let text = serde_json::to_string_pretty(&info).map_err(|e| e.to_string())?;
                     println!("{text}");
                 } else {
-                    let caps = terrorbat::presentation::detect_capabilities();
+                    let caps = terrorbats::presentation::detect_capabilities();
                     println!(
                         "{}",
-                        terrorbat::presentation::render_adapter_inspect(&info, &caps)
+                        terrorbats::presentation::render_adapter_inspect(&info, &caps)
                     );
                 }
                 Ok(0)
             }
         },
         Command::Doctor { store, json } => {
-            let report = terrorbat::doctor::run_doctor(store);
+            let report = terrorbats::doctor::run_doctor(store);
             if json {
                 let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
                 println!("{text}");
             } else {
-                let caps = terrorbat::presentation::detect_capabilities();
-                println!("{}", terrorbat::presentation::render_doctor(&report, &caps));
+                let caps = terrorbats::presentation::detect_capabilities();
+                println!(
+                    "{}",
+                    terrorbats::presentation::render_doctor(&report, &caps)
+                );
             }
             Ok(if report.overall_ready { 0 } else { 3 })
+        }
+        Command::Completions { shell } => {
+            use clap::CommandFactory;
+            use clap_complete::Shell;
+            let target = match shell {
+                CompletionShell::Powershell => Shell::PowerShell,
+                CompletionShell::Bash => Shell::Bash,
+                CompletionShell::Zsh => Shell::Zsh,
+                CompletionShell::Fish => Shell::Fish,
+            };
+            let mut cmd = Cli::command();
+            let mut buf = Vec::new();
+            clap_complete::generate(target, &mut cmd, "terrorbats", &mut buf);
+            print!("{}", String::from_utf8(buf).map_err(|e| e.to_string())?);
+            Ok(0)
+        }
+        Command::Man => {
+            use clap::CommandFactory;
+            let man = clap_mangen::Man::new(Cli::command());
+            let mut buf = Vec::new();
+            man.render(&mut buf).map_err(|e| e.to_string())?;
+            print!("{}", String::from_utf8(buf).map_err(|e| e.to_string())?);
+            Ok(0)
         }
     }
 }
 
 fn inspect_campaign(id: &str, store: Option<PathBuf>, json: bool) -> Result<u8, String> {
-    terrorbat::campaign::validate_campaign_id(id)?;
+    terrorbats::campaign::validate_campaign_id(id)?;
     let store = open_store(store)?;
-    let campaign_dir = terrorbat::campaign::locate_campaign(&store, id)
+    let campaign_dir = terrorbats::campaign::locate_campaign(&store, id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
             format!(
@@ -490,28 +534,28 @@ fn inspect_campaign(id: &str, store: Option<PathBuf>, json: bool) -> Result<u8, 
     // Trusted load: a corrupt campaign, corrupt child, or missing child
     // refuses the aggregate here — success is never rendered over corruption.
     let campaign =
-        terrorbat::campaign::load_campaign(&store, &campaign_dir).map_err(|e| e.to_string())?;
+        terrorbats::campaign::load_campaign(&store, &campaign_dir).map_err(|e| e.to_string())?;
     if json {
         let text = serde_json::to_string_pretty(&campaign).map_err(|e| e.to_string())?;
         println!("{text}");
     } else {
-        let caps = terrorbat::presentation::detect_capabilities();
+        let caps = terrorbats::presentation::detect_capabilities();
         println!(
             "{}",
-            terrorbat::presentation::render_campaign(&campaign, &caps)
+            terrorbats::presentation::render_campaign(&campaign, &caps)
         );
     }
     Ok(0)
 }
 
-fn open_store(store: Option<PathBuf>) -> Result<terrorbat::evidence::EvidenceStore, String> {
+fn open_store(store: Option<PathBuf>) -> Result<terrorbats::evidence::EvidenceStore, String> {
     let root = match store {
         Some(p) => p,
-        None => terrorbat::evidence::EvidenceStore::default_root().map_err(|e| e.to_string())?,
+        None => terrorbats::evidence::EvidenceStore::default_root().map_err(|e| e.to_string())?,
     };
-    terrorbat::evidence::EvidenceStore::open(&root).map_err(|e| e.to_string())
+    terrorbats::evidence::EvidenceStore::open(&root).map_err(|e| e.to_string())
 }
 
-// Human rendering lives in terrorbat::presentation: one receipt model
+// Human rendering lives in terrorbats::presentation: one receipt model
 // projected to a Sartorial Document. The CLI owns no renderers, and the
 // machine (--json) path never touches presentation.

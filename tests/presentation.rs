@@ -1,6 +1,6 @@
 //! Sartorial presentation integration tests.
 //!
-//! Governing rule under test: Terror Bat owns truth, Sartorial owns
+//! Governing rule under test: Terror Bats owns truth, Sartorial owns
 //! presentation. These tests prove meaning survives projection —
 //! wording may improve, nothing material may disappear — and that
 //! machine output, exit codes, hashes and verification are untouched.
@@ -11,8 +11,8 @@ use std::path::Path;
 
 use common::{TempDir, make_repo, write_spec, yaml_path};
 use sartorial_core::Capabilities;
-use terrorbat::receipt::Verdict;
-use terrorbat::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
+use terrorbats::receipt::Verdict;
+use terrorbats::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
 
 fn opts(bat: &Path, repo: &Path, store: &Path) -> RunOptions {
     RunOptions {
@@ -53,7 +53,7 @@ fn pipe_caps(width: usize) -> Capabilities {
     Capabilities::piped(width)
 }
 
-fn proven_receipt(tag: &str) -> (TempDir, terrorbat::receipt::Receipt) {
+fn proven_receipt(tag: &str) -> (TempDir, terrorbats::receipt::Receipt) {
     let dir = TempDir::new(tag);
     let repo = dir.join("repo");
     make_repo(&repo);
@@ -81,7 +81,7 @@ fn proven_receipt(tag: &str) -> (TempDir, terrorbat::receipt::Receipt) {
 
 /// Every material fact of a receipt must survive projection into the new
 /// human presentation (TTY-flavoured).
-fn assert_receipt_facts_present(r: &terrorbat::receipt::Receipt, rendered: &str) {
+fn assert_receipt_facts_present(r: &terrorbats::receipt::Receipt, rendered: &str) {
     let need = [
         r.bat.id.clone(),
         r.claim_text.trim().lines().next().unwrap_or("").to_string(),
@@ -158,7 +158,7 @@ fn assert_receipt_facts_present(r: &terrorbat::receipt::Receipt, rendered: &str)
 #[test]
 fn proven_receipt_projects_every_material_fact() {
     let (_dir, r) = proven_receipt("pres-proven");
-    let rendered = terrorbat::presentation::render_receipt(&r, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&r, &tty_caps(100));
     assert_receipt_facts_present(&r, &rendered);
 }
 
@@ -175,7 +175,7 @@ fn not_observed_receipt_keeps_honesty_language() {
     ))
     .expect("run");
     assert_eq!(out.receipt.verdict, Verdict::NotObserved);
-    let rendered = terrorbat::presentation::render_receipt(&out.receipt, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&out.receipt, &tty_caps(100));
     assert_receipt_facts_present(&out.receipt, &rendered);
     assert!(rendered.contains("NOT OBSERVED"));
     assert!(rendered.contains("NOT a correctness certificate"));
@@ -209,7 +209,7 @@ fn timeout_receipt_marks_oracle_not_evaluated() {
     let bat = write_spec(&specs, "timeout.yaml", &yaml);
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     assert_eq!(out.manifest.run_status, RunStatus::TimedOut);
-    let rendered = terrorbat::presentation::render_receipt(&out.receipt, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&out.receipt, &tty_caps(100));
     assert_receipt_facts_present(&out.receipt, &rendered);
     assert!(rendered.contains("INCONCLUSIVE"));
     assert!(!rendered.contains("FALSIFIED"));
@@ -235,7 +235,7 @@ fn infrastructure_error_receipt_stays_loud() {
     let bat = write_spec(&specs, "infra.yaml", yaml);
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     assert_eq!(out.receipt.verdict, Verdict::InfrastructureError);
-    let rendered = terrorbat::presentation::render_receipt(&out.receipt, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&out.receipt, &tty_caps(100));
     assert_receipt_facts_present(&out.receipt, &rendered);
     assert!(rendered.contains("INFRASTRUCTURE ERROR"));
 }
@@ -261,7 +261,7 @@ fn policy_denied_receipt_preserves_denial() {
     let bat = write_spec(&specs, "policy.yaml", yaml);
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
     assert_eq!(out.manifest.run_status, RunStatus::PolicyDenied);
-    let rendered = terrorbat::presentation::render_receipt(&out.receipt, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&out.receipt, &tty_caps(100));
     assert_receipt_facts_present(&out.receipt, &rendered);
     assert!(rendered.contains("PolicyDenied"));
 }
@@ -288,8 +288,8 @@ fn cleanup_failure_receipt_stays_loud() {
                 evidence:\n  capture: [stdout]\n";
     let bat = write_spec(&specs, "cleanup.yaml", yaml);
     let out = run_bat(&opts(&bat, &repo, &store)).expect("run");
-    let mut manifest = terrorbat::runner::load_manifest(&out.run_dir).expect("manifest");
-    manifest.worktree.cleanup = terrorbat::runner::CleanupRecord {
+    let mut manifest = terrorbats::runner::load_manifest(&out.run_dir).expect("manifest");
+    manifest.worktree.cleanup = terrorbats::runner::CleanupRecord {
         status: CleanupStatus::Failed,
         path: Some("C:\\Temp\\terrorbat\\leftover-worktree".to_string()),
         error: Some("simulated removal failure TB-WORKTREE-CLEANUP".to_string()),
@@ -299,9 +299,9 @@ fn cleanup_failure_receipt_stays_loud() {
         .clone()
         .expect("completed run has an oracle block");
     let receipt =
-        terrorbat::receipt::finalise(terrorbat::receipt::build(&manifest, "claim", oracle))
+        terrorbats::receipt::finalise(terrorbats::receipt::build(&manifest, "claim", oracle))
             .expect("finalise");
-    let rendered = terrorbat::presentation::render_receipt(&receipt, &tty_caps(100));
+    let rendered = terrorbats::presentation::render_receipt(&receipt, &tty_caps(100));
     assert!(rendered.contains("FAILED"));
     assert!(rendered.contains("leftover-worktree"));
     assert!(rendered.contains("TB-WORKTREE-CLEANUP"));
@@ -314,9 +314,9 @@ fn cleanup_failure_receipt_stays_loud() {
 #[test]
 fn tty_output_is_styled_and_plain_is_clean() {
     let (_dir, r) = proven_receipt("pres-tty");
-    let styled = terrorbat::presentation::render_receipt(&r, &tty_caps(100));
+    let styled = terrorbats::presentation::render_receipt(&r, &tty_caps(100));
     assert!(styled.contains("\u{1b}["), "attended terminal gets ANSI");
-    let plain = terrorbat::presentation::render_receipt(&r, &pipe_caps(100));
+    let plain = terrorbats::presentation::render_receipt(&r, &pipe_caps(100));
     assert!(!plain.contains("\u{1b}"), "redirected output has zero ANSI");
     assert!(
         plain.bytes().all(|b| b.is_ascii()),
@@ -332,7 +332,7 @@ fn tty_output_is_styled_and_plain_is_clean() {
 #[test]
 fn no_color_removes_paint_not_meaning() {
     let (_dir, r) = proven_receipt("pres-nocolor");
-    let plain = terrorbat::presentation::render_receipt(&r, &nocolor_caps(100));
+    let plain = terrorbats::presentation::render_receipt(&r, &nocolor_caps(100));
     assert!(!plain.contains("\u{1b}"), "NO_COLOR means zero ANSI");
     assert_receipt_facts_present(&r, &plain);
 }
@@ -340,21 +340,21 @@ fn no_color_removes_paint_not_meaning() {
 #[test]
 fn narrow_terminal_degrades_title_gracefully() {
     assert_eq!(
-        terrorbat::presentation::title_text("BAT RECEIPT", 100),
+        terrorbats::presentation::title_text("BAT RECEIPT", 100),
         "\\^v^/  BAT RECEIPT  \\^v^/"
     );
     assert_eq!(
-        terrorbat::presentation::title_text("BAT RECEIPT", 140),
+        terrorbats::presentation::title_text("BAT RECEIPT", 140),
         "\\^v^/  BAT RECEIPT  \\^v^/"
     );
     assert_eq!(
-        terrorbat::presentation::title_text("BAT RECEIPT", 40),
+        terrorbats::presentation::title_text("BAT RECEIPT", 40),
         "\\^v^/  BAT RECEIPT"
     );
     // A full narrow render completes without panic or truncation of truth.
     let (_dir, r) = proven_receipt("pres-narrow");
     for width in [40usize, 100, 140] {
-        let rendered = terrorbat::presentation::render_receipt(&r, &tty_caps(width));
+        let rendered = terrorbats::presentation::render_receipt(&r, &tty_caps(width));
         assert!(!rendered.is_empty());
         assert_receipt_facts_present(&r, &rendered);
     }
@@ -368,13 +368,16 @@ fn long_paths_handles_and_unicode_survive() {
         "D:\\{}\u{00fc}nicode\\\u{4e2d}\u{6587}",
         "deep\\".repeat(12)
     );
-    altered.evidence.push(terrorbat::receipt::EvidenceItem {
+    altered.evidence.push(terrorbats::receipt::EvidenceItem {
         kind: "git_diff".to_string(),
-        reference: terrorbat::evidence::EvidenceRef(format!("evidence:sha256:{}", "ab".repeat(32))),
+        reference: terrorbats::evidence::EvidenceRef(format!(
+            "evidence:sha256:{}",
+            "ab".repeat(32)
+        )),
         truncated: true,
     });
     for caps in [tty_caps(100), pipe_caps(100), tty_caps(40)] {
-        let rendered = terrorbat::presentation::render_receipt(&altered, &caps);
+        let rendered = terrorbats::presentation::render_receipt(&altered, &caps);
         assert!(rendered.contains("nicode"));
         assert!(rendered.contains(&"ab".repeat(32)));
         assert!(!rendered.is_empty());
@@ -385,20 +388,20 @@ fn long_paths_handles_and_unicode_survive() {
 fn all_top_level_surfaces_use_the_canonical_sigil() {
     let (_dir, r) = proven_receipt("pres-surfaces");
     let caps = tty_caps(100);
-    let receipt_doc = terrorbat::presentation::document_receipt(&r, &caps);
-    let doctor_report = terrorbat::doctor::DoctorReport {
+    let receipt_doc = terrorbats::presentation::document_receipt(&r, &caps);
+    let doctor_report = terrorbats::doctor::DoctorReport {
         terrorbat_version: "0.1.0".to_string(),
         core: vec![],
         optional_tools: vec![],
         isolation: vec![],
         overall_ready: true,
     };
-    let doctor_doc = terrorbat::presentation::document_doctor(&doctor_report, &caps);
+    let doctor_doc = terrorbats::presentation::document_doctor(&doctor_report, &caps);
     for doc in [
         receipt_doc,
         doctor_doc,
-        terrorbat::presentation::document_replay(
-            &terrorbat::receipt::ReplayReport {
+        terrorbats::presentation::document_replay(
+            &terrorbats::receipt::ReplayReport {
                 original_execution_id: "a".to_string(),
                 new_execution_id: "b".to_string(),
                 original_receipt_id: "c".to_string(),
@@ -414,7 +417,7 @@ fn all_top_level_surfaces_use_the_canonical_sigil() {
             &caps,
         ),
     ] {
-        let text = terrorbat::presentation::render_document(&doc, &caps);
+        let text = terrorbats::presentation::render_document(&doc, &caps);
         assert!(text.contains("\\^v^/"), "every surface carries the sigil");
         assert!(
             !text.contains('\u{1f987}'),
@@ -426,8 +429,8 @@ fn all_top_level_surfaces_use_the_canonical_sigil() {
 #[test]
 fn markdown_projection_works_internally() {
     let (_dir, r) = proven_receipt("pres-markdown");
-    let doc = terrorbat::presentation::document_receipt(&r, &pipe_caps(100));
-    let md = terrorbat::presentation::render_markdown(&doc, &pipe_caps(100));
+    let doc = terrorbats::presentation::document_receipt(&r, &pipe_caps(100));
+    let md = terrorbats::presentation::render_markdown(&doc, &pipe_caps(100));
     assert!(!md.is_empty());
     assert!(md.contains(&r.bat.id));
     assert!(md.contains(r.verdict.as_str()));
@@ -468,7 +471,7 @@ fn tampered_receipt_fails_before_projection() {
         ),
     )
     .expect("tamper");
-    let err = terrorbat::receipt::load_receipt(&out.run_dir).expect_err("must refuse");
+    let err = terrorbats::receipt::load_receipt(&out.run_dir).expect_err("must refuse");
     assert!(err.to_string().contains("TB-RECEIPT-CORRUPT"));
 }
 
@@ -517,19 +520,19 @@ fn machine_json_has_no_presentation_envelope() {
 
 #[test]
 fn doctor_projection_preserves_report_truth() {
-    let report = terrorbat::doctor::DoctorReport {
+    let report = terrorbats::doctor::DoctorReport {
         terrorbat_version: "0.1.0".to_string(),
-        core: vec![terrorbat::doctor::CheckResult {
+        core: vec![terrorbats::doctor::CheckResult {
             name: "Git".to_string(),
             ok: true,
             detail: "git version 2.55.0".to_string(),
         }],
-        optional_tools: vec![terrorbat::doctor::CheckResult {
+        optional_tools: vec![terrorbats::doctor::CheckResult {
             name: "cargo".to_string(),
             ok: true,
             detail: "available".to_string(),
         }],
-        isolation: vec![terrorbat::doctor::CheckResult {
+        isolation: vec![terrorbats::doctor::CheckResult {
             name: "Worktree mode".to_string(),
             ok: true,
             detail: "AVAILABLE".to_string(),
@@ -537,7 +540,7 @@ fn doctor_projection_preserves_report_truth() {
         overall_ready: true,
     };
     for caps in [tty_caps(100), pipe_caps(80)] {
-        let rendered = terrorbat::presentation::render_doctor(&report, &caps);
+        let rendered = terrorbats::presentation::render_doctor(&report, &caps);
         // Workwear uppercases display labels; values preserve case exactly.
         for fact in ["GIT", "git version 2.55.0", "CARGO", "WORKTREE MODE"] {
             assert!(rendered.contains(fact), "doctor fact missing: {fact}");

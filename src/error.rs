@@ -1,4 +1,4 @@
-//! Error types for Terror Bat M1.
+//! Error types for Terror Bats M1.
 
 use std::path::{Path, PathBuf};
 

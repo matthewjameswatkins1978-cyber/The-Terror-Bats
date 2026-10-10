@@ -17,7 +17,7 @@
 //! Cancelled / PolicyDenied / Invalid / InfrastructureError). Epistemic
 //! verdicts belong to receipts, never here.
 //!
-//! Durability claim (narrow, honest): evidence finalised by Terror Bat
+//! Durability claim (narrow, honest): evidence finalised by Terror Bats
 //! survives failure of supervised child processes. Power-loss durability is
 //! not claimed.
 
@@ -176,7 +176,7 @@ pub struct CapabilitiesRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentRecord {
     pub declared: Vec<String>,
-    /// Symbolic name → captured value, or null when Terror Bat does not
+    /// Symbolic name → captured value, or null when Terror Bats does not
     /// capture that fact in First Flight.
     pub captured: BTreeMap<String, Option<String>>,
 }
@@ -287,7 +287,7 @@ pub fn run_bat_with_adapter_expectations(
             &opts.repo,
             format!(
                 "Target repository is dirty.\n\n\
-                 Terror Bat will not silently exclude or incorporate local changes.\n\n\
+                 Terror Bats will not silently exclude or incorporate local changes.\n\n\
                  Resolve the target state before running this Bat.\n\n\
                  Offending entries (first 10):\n{preview}"
             ),
@@ -1301,7 +1301,7 @@ fn base_limitations() -> Vec<String> {
         "Disposable Git worktree mode is NOT hostile-code containment: host filesystem, \
          network, and credential access are UNENFORCED (advisory declarations only)."
             .to_string(),
-        "command.run spawns arbitrary programs; only Terror Bat's built-in operations are \
+        "command.run spawns arbitrary programs; only Terror Bats' built-in operations are \
          path-confined to the worktree."
             .to_string(),
         "Evidence durability covers supervised child-process failure; power-loss and \

@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::{TempDir, make_repo, write_spec};
-use terrorbat::builtins::{StepCtx, StepError, dispatch};
-use terrorbat::oracle::OracleResult;
-use terrorbat::receipt::{Verdict, verdict_for};
-use terrorbat::runner::{RunOptions, RunStatus, exit_code_for, run_bat};
+use terrorbats::builtins::{StepCtx, StepError, dispatch};
+use terrorbats::oracle::OracleResult;
+use terrorbats::receipt::{Verdict, verdict_for};
+use terrorbats::runner::{RunOptions, RunStatus, exit_code_for, run_bat};
 
 fn ctx<'a>(worktree: &'a Path, spec_dir: &'a Path) -> StepCtx<'a> {
     StepCtx {
@@ -46,8 +46,8 @@ fn opts(bat: &Path, repo: &Path, store: &Path) -> RunOptions {
 
 #[test]
 fn catalogue_lists_twelve_adapters_with_honest_statuses() {
-    let all = terrorbat::adapters::all();
-    let names = terrorbat::adapters::names();
+    let all = terrorbats::adapters::all();
+    let names = terrorbats::adapters::names();
     assert_eq!(all.len(), 12, "catalogue size is a contract");
     assert_eq!(names.len(), 12);
     for expect in [
@@ -94,13 +94,13 @@ fn catalogue_lists_twelve_adapters_with_honest_statuses() {
 
 #[test]
 fn unknown_adapter_is_none() {
-    assert!(terrorbat::adapters::find("my-weird-web-service-adapter").is_none());
-    assert!(terrorbat::adapters::find("").is_none());
+    assert!(terrorbats::adapters::find("my-weird-web-service-adapter").is_none());
+    assert!(terrorbats::adapters::find("").is_none());
 }
 
 #[test]
 fn every_operation_declares_a_non_empty_capability() {
-    for a in terrorbat::adapters::all() {
+    for a in terrorbats::adapters::all() {
         assert!(
             !a.operations.is_empty(),
             "adapter {} has no operations",

@@ -1,9 +1,9 @@
-# Terror Bat 0.1 — First Flight Guide (Windows)
+# The Terror Bats Framework — First Flight Guide (Windows)
 
 This guide gets a technical user from zero to a real, evidence-backed result
 without reading source code.
 
-## What Terror Bat is
+## What Terror Bats is
 
 A language-agnostic falsification and assurance framework. It attacks claims
 about systems, isolates the attack in a disposable Git worktree, captures
@@ -19,7 +19,7 @@ oracle, and evidence requirements. The pipeline:
 CLAIM → ATTACK → EXECUTION → ORACLE → EVIDENCE → RECEIPT
 ```
 
-## What Terror Bat is not (First Flight)
+## What Terror Bats is not (First Flight)
 
 - Not a sandbox. The disposable Git worktree gives **reversibility and
   observation**, not containment. Host filesystem, network, credentials and
@@ -34,17 +34,17 @@ CLAIM → ATTACK → EXECUTION → ORACLE → EVIDENCE → RECEIPT
 The release artifact is a single executable:
 
 ```powershell
-cargo build --release --bin terrorbat
-# -> target\release\terrorbat.exe
+cargo build --release --bin terrorbats
+# -> target\release\terrorbats.exe
 ```
 
-Copy `terrorbat.exe` wherever you like (helper: `install\install.ps1`).
-Terror Bat never modifies PATH silently. Git must be on PATH.
+Copy `terrorbats.exe` wherever you like (helper: `install\install.ps1`).
+Terror Bats never modifies PATH silently. Git must be on PATH.
 
 Check readiness:
 
 ```powershell
-terrorbat doctor
+terrorbats doctor
 ```
 
 Doctor verifies Git, the evidence store, worktree create/remove, temp
@@ -54,13 +54,13 @@ writability and M2 process supervision; it reports optional tools
 ## Run a Bat
 
 ```powershell
-terrorbat run bats\unexpected-change.yaml --repo D:\Projects\some-project
+terrorbats run bats\unexpected-change.yaml --repo D:\Projects\some-project
 ```
 
 Rules:
 
 - The target repository **must be clean** (no tracked/staged/untracked
-  changes). Dirty targets are refused — Terror Bat never silently includes
+  changes). Dirty targets are refused — Terror Bats never silently includes
   or discards your local work.
 - The exact HEAD commit is pinned; the attack runs in a disposable worktree
   under `%TEMP%\terrorbat\<execution-id>\`, never in your working tree.
@@ -82,7 +82,7 @@ RECEIPT:   receipt:sha256:...
 
 `PROVEN` = deterministic evidence established the claim was **falsified
 under the recorded conditions** (this repo, this commit, this machine, this
-Terror Bat version). It is **not** a universal proof, not a certification,
+Terror Bats version). It is **not** a universal proof, not a certification,
 and not a security statement.
 
 `NOT OBSERVED` = this attack did not falsify the claim. It is **not** a
@@ -105,10 +105,10 @@ the claim failed; such runs yield `INCONCLUSIVE` (or `INVALID` /
 ## Inspect, evidence, replay
 
 ```powershell
-terrorbat inspect <execution-id | receipt:sha256:...>
-terrorbat evidence show evidence:sha256:...        # text printed; digest verified on read
-terrorbat evidence show evidence:sha256:... --out file.bin   # binary extraction
-terrorbat replay <execution-id | receipt:sha256:...>
+terrorbats inspect <execution-id | receipt:sha256:...>
+terrorbats evidence show evidence:sha256:...        # text printed; digest verified on read
+terrorbats evidence show evidence:sha256:... --out file.bin   # binary extraction
+terrorbats replay <execution-id | receipt:sha256:...>
 ```
 
 Replay creates a **new execution** from the stored Bat source and the pinned
@@ -199,14 +199,14 @@ The receipt remains authoritative; the exit code is a summary.
 
 ## Packs and campaigns (W2)
 
-First Flight is complete: the Bats above run, the self-attack passes, and receipts verify. The in-repo self-attack is explicitly **self-attack lite** — a fixed demonstrator over known Bats, not an open-ended assault on Terror Bat itself (that remains M10).
+First Flight is complete: the Bats above run, the self-attack passes, and receipts verify. The in-repo self-attack is explicitly **self-attack lite** — a fixed demonstrator over known Bats, not an open-ended assault on Terror Bats itself (that remains M10).
 
 W2 adds repeated falsification on top of the same machinery. A **pack** names an ordered list of Bats (paths resolve relative to the pack file); a **campaign** runs a pack N times serially, each child a first-class ordinary run with its own receipt:
 
 ```powershell
-terrorbat pack check packs\first-flight.yaml
-terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --runs 2
-terrorbat pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
+terrorbats pack check packs\first-flight.yaml
+terrorbats pack run packs\first-flight.yaml --repo D:\Projects\some-project --runs 2
+terrorbats pack run packs\first-flight.yaml --repo D:\Projects\some-project --stop-on-proven
 ```
 
 A retry re-runs *until something works*; a campaign re-runs *to see what holds* — later results never overwrite earlier ones, and `stop-on-proven` halts only after a durably persisted PROVEN receipt. Campaign receipts (`campaign:sha256:…`) reference child receipts without copying evidence. The shipped `packs\first-flight.yaml` is a demonstrator only and carries no assurance-profile claims. Full evidence reuse/caching (Constitution 13) remains future work. External adapters are available through the M8 stdio protocol; see [External Adapter Protocol v1](external-adapter-v1.md).

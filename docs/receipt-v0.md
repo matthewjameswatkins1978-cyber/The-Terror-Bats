@@ -1,6 +1,6 @@
 # Receipt v0 (M0)
 
-The receipt is the primary human-facing output of a Terror Bat run. A receipt that cannot be understood is a failed receipt, regardless of what the run proved (Constitution 14).
+The receipt is the primary human-facing output of a Terror Bats run. A receipt that cannot be understood is a failed receipt, regardless of what the run proved (Constitution 14).
 
 ## 1. What a receipt must answer
 
@@ -15,7 +15,7 @@ Every receipt — JSON and human rendering alike — must answer:
 7. **What capabilities were requested?** — the `requires` / `forbids` declarations.
 8. **Which capabilities were actually enforced?** — per-capability state (ENFORCED vs UNENFORCED vs DENIED), honestly, with reversibility/containment properties recorded separately from enforcement (capability-model.md §2).
 9. **What limitations remain?** — isolation guarantees and non-guarantees, known gaps, deferred judgements.
-10. **How can the run be reproduced?** — run identity, target state (commit/worktree base), adapter versions, Terror Bat version.
+10. **How can the run be reproduced?** — run identity, target state (commit/worktree base), adapter versions, Terror Bats version.
 
 ## 2. Epistemic states
 
@@ -59,11 +59,11 @@ INCONCLUSIVE    — the experiment completed without enough information to
 
 INVALID         — the Bat or experiment was malformed.
 
-INFRASTRUCTURE ERROR — Terror Bat or an external dependency failed in a way
+INFRASTRUCTURE ERROR — Terror Bats or an external dependency failed in a way
                   that invalidated the experiment.
 ```
 
-This is **not** PASS/FAIL and must never be reduced to it. `NOT OBSERVED` is not "the system is correct"; it is "this attack did not falsify the claim". Terror Bat never claims certification or trust status (Constitution 10).
+This is **not** PASS/FAIL and must never be reduced to it. `NOT OBSERVED` is not "the system is correct"; it is "this attack did not falsify the claim". Terror Bats never claims certification or trust status (Constitution 10).
 
 ### Mapping from execution status and oracle result
 

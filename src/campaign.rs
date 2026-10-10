@@ -521,7 +521,7 @@ fn run_campaign_with_config(
             &opts.repo,
             format!(
                 "Target repository is dirty.\n\n\
-                 Terror Bat will not run a campaign over local changes.\n\n\
+                 Terror Bats will not run a campaign over local changes.\n\n\
                  Resolve the target state before running this campaign.\n\n\
                  Offending entries (first 10):\n{preview}"
             ),

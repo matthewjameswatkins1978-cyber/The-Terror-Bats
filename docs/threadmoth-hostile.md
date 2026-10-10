@@ -19,7 +19,7 @@ capabilities, preview, mutate, plan, apply_plan, transact_preview, transact
 ```
 
 (`recover_inspect` is omitted: no Bat needs it, and only needed actions are
-exposed.) The adapter validates its Terror Bat payload strictly (unknown or
+exposed.) The adapter validates its Terror Bats payload strictly (unknown or
 irrelevant fields are `invalid`, exit 2; worktree escapes are `invalid`;
 missing executables and non-JSON Threadmoth output are
 `infrastructure_error`), builds the real Threadmoth CLI invocation, parses the
@@ -53,22 +53,22 @@ synthetic defect for a Threadmoth finding.
 
 ```powershell
 # validate the pack and every effective Bat
-terrorbat pack check packs/threadmoth-hostile.yaml
+terrorbats pack check packs/threadmoth-hostile.yaml
 
 # run the fifteen hostile Bats against a disposable target
 Copy-Item examples/threadmoth/adapters.yaml $env:TEMP\tm-adapters.yaml
 # (edit the two absolute paths inside first)
-terrorbat pack run packs/threadmoth-hostile.yaml --repo D:\CleanTarget `
+terrorbats pack run packs/threadmoth-hostile.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml
 
 # repeat the four deterministic attacks ten times (forty ordinary children)
-terrorbat pack run packs/threadmoth-stress.yaml --repo D:\CleanTarget `
+terrorbats pack run packs/threadmoth-stress.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml --runs 10
 
 # single Bat / replay (receipts are first-class ordinary runs)
-terrorbat run bats/threadmoth/stale-preview.yaml --repo D:\CleanTarget `
+terrorbats run bats/threadmoth/stale-preview.yaml --repo D:\CleanTarget `
     --adapters $env:TEMP\tm-adapters.yaml --json
-terrorbat replay <receipt> --adapters $env:TEMP\tm-adapters.yaml
+terrorbats replay <receipt> --adapters $env:TEMP\tm-adapters.yaml
 ```
 
 The hostile pack operates against disposable fixture worktrees only. The

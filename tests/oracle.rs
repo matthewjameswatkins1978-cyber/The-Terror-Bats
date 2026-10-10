@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use common::TempDir;
 use serde_json::{Value, json};
-use terrorbat::evidence::{EvidenceRef, EvidenceStore};
-use terrorbat::oracle::{self, EvalCtx, OracleEvaluation, OracleResult};
-use terrorbat::runner::{Captures, RunStatus, StepRecord};
+use terrorbats::evidence::{EvidenceRef, EvidenceStore};
+use terrorbats::oracle::{self, EvalCtx, OracleEvaluation, OracleResult};
+use terrorbats::runner::{Captures, RunStatus, StepRecord};
 
 struct Fixture {
     #[allow(dead_code)]

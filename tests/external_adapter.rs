@@ -3,7 +3,7 @@ mod common;
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec, yaml_path};
 use std::path::{Path, PathBuf};
-use terrorbat::{
+use terrorbats::{
     adapter,
     campaign::{self, CampaignOptions},
     evidence::EvidenceStore,

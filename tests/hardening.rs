@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use terrorbat::ParamOverrides;
+use terrorbats::ParamOverrides;
 
 const SAFE_MAX: i64 = 9_007_199_254_740_991;
 const SAFE_MIN: i64 = -9_007_199_254_740_991;
@@ -36,15 +36,16 @@ params:
     )
 }
 
-fn identify(yaml: &str) -> Result<terrorbat::IdentifiedSpec, String> {
-    terrorbat::identify_spec_str(yaml, Path::new("<test>.yaml"), &ParamOverrides::default())
+fn identify(yaml: &str) -> Result<terrorbats::IdentifiedSpec, String> {
+    terrorbats::identify_spec_str(yaml, Path::new("<test>.yaml"), &ParamOverrides::default())
         .map_err(|e| e.to_string())
 }
 
-fn identify_with(yaml: &str, overrides: &[&str]) -> Result<terrorbat::IdentifiedSpec, String> {
+fn identify_with(yaml: &str, overrides: &[&str]) -> Result<terrorbats::IdentifiedSpec, String> {
     let owned: Vec<String> = overrides.iter().map(|s| s.to_string()).collect();
     let parsed = ParamOverrides::parse(&owned).map_err(|e| e.to_string())?;
-    terrorbat::identify_spec_str(yaml, Path::new("<test>.yaml"), &parsed).map_err(|e| e.to_string())
+    terrorbats::identify_spec_str(yaml, Path::new("<test>.yaml"), &parsed)
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ fn quoted_numeric_string_key_is_accepted() {
     // so the values are quoted as well.)
     let yaml = [MINIMAL, "meta: { \"1\": \"x\", \"true\": \"y\" }\n"].concat();
     let path = Path::new("<test>.yaml");
-    let spec = terrorbat::spec::parse_spec(&yaml, path, &ParamOverrides::default())
+    let spec = terrorbats::spec::parse_spec(&yaml, path, &ParamOverrides::default())
         .unwrap_or_else(|e| panic!("quoted keys: {e}"));
     let meta = spec.meta.expect("meta present");
     assert_eq!(meta.0["1"], serde_json::Value::String("x".to_string()));

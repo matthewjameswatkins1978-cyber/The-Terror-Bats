@@ -10,10 +10,10 @@ mod common;
 use std::path::PathBuf;
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec};
-use terrorbat::campaign::{self, CampaignOptions, summarize};
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::receipt::Verdict;
-use terrorbat::runner::RunStatus;
+use terrorbats::campaign::{self, CampaignOptions, summarize};
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::receipt::Verdict;
+use terrorbats::runner::RunStatus;
 
 /// A Bat whose attack mutates the protected path; the oracle detects it.
 fn falsifying_bat(id: &str) -> String {
@@ -160,7 +160,7 @@ fn repeated_attacks_may_yield_different_verdicts_across_iterations() {
     execs.dedup();
     assert_eq!(execs.len(), 4);
     assert_eq!(
-        terrorbat::campaign::exit_code_for_campaign(&out.campaign),
+        terrorbats::campaign::exit_code_for_campaign(&out.campaign),
         1
     );
 }
@@ -188,7 +188,7 @@ fn later_proven_never_erases_earlier_not_observed_records() {
     // Both child receipts survive independently in the store.
     let store = EvidenceStore::open(&fx.store).expect("store");
     for child in &out.campaign.children {
-        let live = terrorbat::receipt::load_receipt(&store.run_dir(&child.execution_id))
+        let live = terrorbats::receipt::load_receipt(&store.run_dir(&child.execution_id))
             .expect("child receipt durable");
         assert_eq!(live.receipt_id, child.receipt_id);
         assert_eq!(live.verdict, child.verdict);
@@ -226,7 +226,7 @@ fn stop_on_proven_fires_only_after_durable_proven_evidence() {
     let reason = out.campaign.stop_reason.clone().expect("stop reason");
     assert!(reason.contains(&proven_child.receipt_id), "{reason}");
     let store = EvidenceStore::open(&fx2.store).expect("store");
-    let live = terrorbat::receipt::load_receipt(&store.run_dir(&proven_child.execution_id))
+    let live = terrorbats::receipt::load_receipt(&store.run_dir(&proven_child.execution_id))
         .expect("PROVEN receipt durable before the halt");
     assert_eq!(live.verdict, Verdict::Proven);
     assert_eq!(live.receipt_id, proven_child.receipt_id);
@@ -246,7 +246,7 @@ fn campaign_summary_counts_equal_immutable_child_receipts() {
 
     let store = EvidenceStore::open(&fx.store).expect("store");
     for child in &out.campaign.children {
-        let live = terrorbat::receipt::load_receipt(&store.run_dir(&child.execution_id))
+        let live = terrorbats::receipt::load_receipt(&store.run_dir(&child.execution_id))
             .expect("child verifies");
         assert_eq!(live.receipt_id, child.receipt_id);
         assert_eq!(live.verdict, child.verdict);
@@ -271,7 +271,7 @@ fn source_target_repo_clean_after_repeated_executions() {
         repo_is_clean(&fx.repo),
         "campaign must not leave residue in the source target"
     );
-    let now = terrorbat::worktree::inspect_target(&fx.repo).expect("inspect target");
+    let now = terrorbats::worktree::inspect_target(&fx.repo).expect("inspect target");
     assert!(!now.dirty);
     assert_eq!(now.commit, fx.head);
     assert_eq!(now.commit, out.campaign.target_commit);
@@ -287,7 +287,7 @@ fn all_children_share_the_pinned_baseline_commit() {
 
     let store = EvidenceStore::open(&fx.store).expect("store");
     for child in &out.campaign.children {
-        let live = terrorbat::receipt::load_receipt(&store.run_dir(&child.execution_id))
+        let live = terrorbats::receipt::load_receipt(&store.run_dir(&child.execution_id))
             .expect("child verifies");
         assert_eq!(
             live.target.commit, out.campaign.target_commit,
@@ -323,7 +323,7 @@ fn interruption_or_infra_failure_recorded_as_such_never_as_falsification() {
     assert_eq!(out.campaign.summary.get("INFRASTRUCTURE ERROR"), Some(&1));
     assert_eq!(out.campaign.summary.get("PROVEN"), Some(&0));
     assert_eq!(
-        terrorbat::campaign::exit_code_for_campaign(&out.campaign),
+        terrorbats::campaign::exit_code_for_campaign(&out.campaign),
         3
     );
     assert!(repo_is_clean(&fx.repo));
@@ -350,14 +350,14 @@ fn pack_in_subdirectory_resolves_bat_paths_relative_to_pack_file() {
     )
     .expect("write nested pack");
 
-    let identified = terrorbat::pack::identify_pack_file(&sub.join("pack.yaml"))
+    let identified = terrorbats::pack::identify_pack_file(&sub.join("pack.yaml"))
         .expect("nested pack identifies");
     assert_eq!(identified.entries.len(), 1);
     assert_eq!(identified.entries[0].path, "../../bat.yaml");
     assert_eq!(identified.entries[0].human_id, "subdir-bat");
-    let direct = terrorbat::identify_spec_file(
+    let direct = terrorbats::identify_spec_file(
         &dir.path.join("bat.yaml"),
-        &terrorbat::ParamOverrides::default(),
+        &terrorbats::ParamOverrides::default(),
     )
     .expect("bat identifies directly");
     assert_eq!(identified.entries[0].bat, direct.identities.bat);
@@ -369,7 +369,7 @@ fn pack_in_subdirectory_resolves_bat_paths_relative_to_pack_file() {
         "version: terrorbat-pack/v1\nid: bad-pack\nbats:\n  - path: bat.yaml\n",
     )
     .expect("write bad pack");
-    let err = terrorbat::pack::identify_pack_file(&sub.join("bad.yaml"))
+    let err = terrorbats::pack::identify_pack_file(&sub.join("bad.yaml"))
         .expect_err("cwd-relative path must not resolve");
     assert!(err.to_string().contains("bat.yaml"), "{err}");
 }

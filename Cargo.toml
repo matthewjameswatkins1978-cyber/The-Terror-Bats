@@ -1,14 +1,16 @@
 [package]
-name = "terrorbat"
-version = "0.1.0"
+name = "terrorbats"
+version = "0.2.0-rc.1"
 edition = "2024"
-description = "Terror Bat — reproducible falsification experiments with evidence and receipts"
+description = "The Terror Bats Framework — reproducible falsification experiments with evidence and receipts"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats"
 
 [dependencies]
 anstyle = "1.0"
 clap = { version = "4.6", features = ["derive"] }
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 command-group = "5.0"
 dirs = "7"
 regex = "1"
@@ -24,3 +26,6 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(unix)'.dependencies]
 # Probe-only: ignoring SIGTERM in the graceful-termination test helper.
 libc = "0.2"
+
+[build-dependencies]
+winres = "0.1.12"

@@ -12,7 +12,7 @@
 #          the timeout + capture + cleanup path end-to-end.
 #
 # Requires a probe program. The repository's test probe works:
-#   terrorbat run bats/orphan-process.yaml --repo <repo> ^
+#   terrorbats run bats/orphan-process.yaml --repo <repo> ^
 #     --param probe_program=<path>\target\debug\tb_probe_tree.exe
 #
 # Expected receipt: Execution TimedOut, verdict INCONCLUSIVE, cleanup

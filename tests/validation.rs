@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use terrorbat::ParamOverrides;
+use terrorbats::ParamOverrides;
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -30,7 +30,7 @@ evidence:
 
 fn parse_err(yaml: &str) -> String {
     let path = Path::new("<test>.yaml");
-    let err = terrorbat::identify_spec_str(yaml, path, &ParamOverrides::default())
+    let err = terrorbats::identify_spec_str(yaml, path, &ParamOverrides::default())
         .expect_err("spec must be rejected")
         .to_string();
     assert!(
@@ -44,7 +44,7 @@ fn parse_err_with(yaml: &str, overrides: &[&str]) -> String {
     let owned: Vec<String> = overrides.iter().map(|s| s.to_string()).collect();
     let parsed = ParamOverrides::parse(&owned).expect("valid override syntax");
     let path = Path::new("<test>.yaml");
-    terrorbat::identify_spec_str(yaml, path, &parsed)
+    terrorbats::identify_spec_str(yaml, path, &parsed)
         .expect_err("spec must be rejected")
         .to_string()
 }
@@ -53,7 +53,7 @@ fn parse_err_with(yaml: &str, overrides: &[&str]) -> String {
 fn minimal_valid_spec_is_accepted() {
     let path = Path::new("<test>.yaml");
     let identified =
-        terrorbat::identify_spec_str(MINIMAL, path, &ParamOverrides::default()).expect("valid");
+        terrorbats::identify_spec_str(MINIMAL, path, &ParamOverrides::default()).expect("valid");
     assert_eq!(identified.human_id, "minimal");
     assert!(identified.identities.bat.starts_with("bat:sha256:"));
 }
@@ -256,10 +256,10 @@ fn timeout_equivalent_representations_share_identity() {
     let a = format!("{MINIMAL}\ntimeout:\n  run: \"060s\"\n");
     let b = format!("{MINIMAL}\ntimeout:\n  run: \"60s\"\n");
     let path = Path::new("<test>.yaml");
-    let ids_a = terrorbat::identify_spec_str(&a, path, &ParamOverrides::default())
+    let ids_a = terrorbats::identify_spec_str(&a, path, &ParamOverrides::default())
         .expect("valid")
         .identities;
-    let ids_b = terrorbat::identify_spec_str(&b, path, &ParamOverrides::default())
+    let ids_b = terrorbats::identify_spec_str(&b, path, &ParamOverrides::default())
         .expect("valid")
         .identities;
     assert_eq!(ids_a, ids_b);
@@ -307,9 +307,9 @@ evidence: { capture: [stdout] }
         .replace("&shared hello", "hello")
         .replace("*shared", "hello");
     let path = Path::new("<test>.yaml");
-    let a = terrorbat::identify_spec_str(yaml, path, &ParamOverrides::default())
+    let a = terrorbats::identify_spec_str(yaml, path, &ParamOverrides::default())
         .expect("anchored valid");
-    let b = terrorbat::identify_spec_str(&expanded, path, &ParamOverrides::default())
+    let b = terrorbats::identify_spec_str(&expanded, path, &ParamOverrides::default())
         .expect("expanded valid");
     assert_eq!(a.identities, b.identities);
 }
@@ -330,7 +330,7 @@ fn cli_override_malformed_is_rejected() {
 
 #[test]
 fn missing_file_reports_readable_error() {
-    let err = terrorbat::identify_spec_file(
+    let err = terrorbats::identify_spec_file(
         &fixture_dir().join("does_not_exist.yaml"),
         &ParamOverrides::default(),
     )
@@ -352,7 +352,7 @@ fn fixture_files_all_parse() {
                 .to_string_lossy()
                 .starts_with("invalid_")
         {
-            terrorbat::identify_spec_file(&path, &ParamOverrides::default())
+            terrorbats::identify_spec_file(&path, &ParamOverrides::default())
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         }
     }

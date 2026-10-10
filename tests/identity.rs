@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use terrorbat::{ParamOverrides, identify_spec_file};
+use terrorbats::{ParamOverrides, identify_spec_file};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12,13 +12,13 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn ids(name: &str) -> terrorbat::Identities {
+fn ids(name: &str) -> terrorbats::Identities {
     identify_spec_file(&fixture(name), &ParamOverrides::default())
         .unwrap_or_else(|e| panic!("{name}: {e}"))
         .identities
 }
 
-fn ids_with(name: &str, overrides: &[&str]) -> terrorbat::Identities {
+fn ids_with(name: &str, overrides: &[&str]) -> terrorbats::Identities {
     let owned: Vec<String> = overrides.iter().map(|s| s.to_string()).collect();
     let parsed = ParamOverrides::parse(&owned).expect("valid overrides");
     identify_spec_file(&fixture(name), &parsed)

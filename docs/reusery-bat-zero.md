@@ -1,10 +1,10 @@
 # Reusery Bat Zero (M0)
 
-Reusery is the **first real specimen** of Terror Bat. Bat Zero is not a toy demo: it is the existing Reusery A / B / C\* / C experiment re-expressed as a Terror Bat, run through the Terror Bat pipeline at milestone **M6.5**, and used to decide whether Terror Bat continues at all (the kill/continue gate, architecture.md §10–§11).
+Reusery is the **first real specimen** of Terror Bats. Bat Zero is not a toy demo: it is the existing Reusery A / B / C\* / C experiment re-expressed as a Terror Bats, run through the Terror Bats pipeline at milestone **M6.5**, and used to decide whether Terror Bats continues at all (the kill/continue gate, architecture.md §10–§11).
 
-The purpose of Bat Zero is to **test Terror Bat itself**, using a prior real experiment whose conclusion is a **reference result to inspect — not a predetermined answer**.
+The purpose of Bat Zero is to **test Terror Bats itself**, using a prior real experiment whose conclusion is a **reference result to inspect — not a predetermined answer**.
 
-> **Bat Zero validates Terror Bat against a prior real experiment, not against a predetermined answer. The prior Reusery conclusion is evidence to inspect, not truth to preserve.**
+> **Bat Zero validates Terror Bats against a prior real experiment, not against a predetermined answer. The prior Reusery conclusion is evidence to inspect, not truth to preserve.**
 
 ## 1. What Bat Zero is
 
@@ -42,7 +42,7 @@ The exact Reusery procedure must be recovered from the Reusery repository before
 - The Reusery experiment exists and has variant arms labelled **A**, **B**, **C\***, and **C**.
 - The experiment concerns dependency-reuse discipline (reuse vs. shadow/reimplementation pressure).
 - It produced a manual conclusion. **The fact is that a conclusion was reached and recorded**; whether that conclusion was correct remains testable. It serves as a reference result / comparison baseline for Bat Zero, not as ground truth.
-- Terror Bat's own reuse-first discipline (Constitution 11) is thematically downstream of this experiment.
+- Terror Bats' own reuse-first discipline (Constitution 11) is thematically downstream of this experiment.
 
 ### Placeholders requiring Reusery inspection
 
@@ -66,23 +66,23 @@ If inspection contradicts an assumption, the contradiction is recorded and the B
 
 Bat Zero must answer seven questions. These are the success criteria referenced by the M1 entry conditions and the kill/continue gate:
 
-1. **Can Terror Bat express the existing experiment cleanly?** — the Reusery arms become readable Bat Specs without contortions.
+1. **Can Terror Bats express the existing experiment cleanly?** — the Reusery arms become readable Bat Specs without contortions.
 2. **Can the experiment run through language-neutral primitives?** — setup/run steps go via adapters and generic capture, not Reusery-specific engine code.
 3. **Can another machine reproduce the experiment from its receipt/evidence?** — a clean checkout plus the receipt's reproduction block re-runs Bat Zero to a comparable verdict.
 4. **Does the receipt make the conclusion easier to inspect than the manual experiment?** — a fresh reader understands claim, attack, result, and limitations from the receipt alone.
-5. **Does Terror Bat expose missing evidence or hidden assumptions in the existing experiment?** — placeholders P3–P6 get concrete answers; gaps in the original evidence become visible findings, not lost history.
+5. **Does Terror Bats expose missing evidence or hidden assumptions in the existing experiment?** — placeholders P3–P6 get concrete answers; gaps in the original evidence become visible findings, not lost history.
 6. **How much Terror-Bat-specific machinery was required?** — measured honestly: lines of adapter code, custom oracle conditions, engine changes. Large numbers trigger kill criterion 2.
-7. **Did Terror Bat reduce ambiguity or simply add ceremony?** — the honest overall judgement, recorded in the Bat Zero report.
+7. **Did Terror Bats reduce ambiguity or simply add ceremony?** — the honest overall judgement, recorded in the Bat Zero report.
 
 The **Bat Zero report** answers all seven explicitly, with evidence references. It must also state which comparison outcome against the prior Reusery conclusion applies. Bat Zero is explicitly allowed to conclude any of:
 
-- Terror Bat **reproduces** the prior conclusion.
-- Terror Bat **weakens** the prior conclusion.
-- Terror Bat finds the prior evidence **insufficient**.
-- Terror Bat **contradicts** the prior conclusion.
+- Terror Bats **reproduces** the prior conclusion.
+- Terror Bats **weakens** the prior conclusion.
+- Terror Bats finds the prior evidence **insufficient**.
+- Terror Bats **contradicts** the prior conclusion.
 - The comparison is **inconclusive**.
 
-A contradiction or weakening of the prior conclusion is a legitimate — potentially valuable — Bat Zero result, provided the receipts support it. What is *not* legitimate is tuning Terror Bat until it reproduces the prior answer.
+A contradiction or weakening of the prior conclusion is a legitimate — potentially valuable — Bat Zero result, provided the receipts support it. What is *not* legitimate is tuning Terror Bats until it reproduces the prior answer.
 
 The report is the input to the kill/continue decision (architecture.md §11). A "no" on 1, 3, or 4, or a damning answer on 6 or 7, is allowed — and expected — to stop the project.
 

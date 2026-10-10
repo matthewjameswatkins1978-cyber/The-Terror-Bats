@@ -1,6 +1,6 @@
 # Capability Model v0 (M0)
 
-Terror Bat declares effects before execution (Constitution 5) and records honestly what was actually enforced (Constitution 19). A Bat may know less than the host knows, and may do less than the host can do (Constitution 6, 7).
+Terror Bats declares effects before execution (Constitution 5) and records honestly what was actually enforced (Constitution 19). A Bat may know less than the host knows, and may do less than the host can do (Constitution 6, 7).
 
 ## 1. Capabilities
 
@@ -45,7 +45,7 @@ Every capability relevant to a run passes through states. These are distinct and
 
 The load-bearing rule:
 
-> **Terror Bat must never claim a capability is technically blocked when it merely asked a worker not to use it.**
+> **Terror Bats must never claim a capability is technically blocked when it merely asked a worker not to use it.**
 
 ### Authority/enforcement vs reversibility/containment
 
@@ -80,7 +80,7 @@ Under worktree-only execution, capabilities such as `network`, host filesystem a
 | Container / VM (later, reused not built) | Network egress rules, filesystem mounts | Kernel-adjacent escapes |
 | WASI sandbox (later) | Capability-based file/network grants by construction | Host resource exhaustion |
 
-Terror Bat reuses external isolation systems rather than building its own (architecture.md §5). Each level upgrades which states are achievable; the DECLARED/GRANTED/ENFORCED/UNENFORCED/DENIED vocabulary stays the same.
+Terror Bats reuses external isolation systems rather than building its own (architecture.md §5). Each level upgrades which states are achievable; the DECLARED/GRANTED/ENFORCED/UNENFORCED/DENIED vocabulary stays the same.
 
 ## 4. Human rendering
 
@@ -103,7 +103,7 @@ Every "may not" that is advisory only must be marked as such. Under worktree-onl
 
 ## 5. Relationship to Tethers
 
-Tethers may later provide stronger authority enforcement for capability decisions. Terror Bat must **not** depend on Tethers: the capability model, states, and honest receipt rendering are complete without it. Where Tethers is present, its decisions can move capabilities from UNENFORCED to ENFORCED with an auditable authority record; where it is absent, Terror Bat runs with worktree-level reality and says so.
+Tethers may later provide stronger authority enforcement for capability decisions. Terror Bats must **not** depend on Tethers: the capability model, states, and honest receipt rendering are complete without it. Where Tethers is present, its decisions can move capabilities from UNENFORCED to ENFORCED with an auditable authority record; where it is absent, Terror Bats runs with worktree-level reality and says so.
 
 ## 6. Known open points (deferred, not hidden)
 

@@ -26,7 +26,7 @@ cargo test -p lighting --bin lighting --no-run --message-format=json
 
 Obtain the exact test executables from Cargo's `compiler-artifact` JSON entries.
 Bind the fixture HEAD and its product ancestor explicitly. The adapter rejects
-any Terror Bat `target_commit` that differs from the configured fixture HEAD.
+any Terror Bats `target_commit` that differs from the configured fixture HEAD.
 Its ordinary logical output identifies both revisions, target executable/script
 SHA-256, the operation, and execution ID. The adapter/checker source digest is part of its description identity, so changed checker semantics invalidate replay and Campaign expectations. Raw histories are preserved as ordinary
 step stdout evidence and child receipts in the selected store.
@@ -54,7 +54,7 @@ invariants from incomplete or malformed mechanical evidence. Those synthetic
 controls never become Lantern findings.
 
 The oracle is an ordinary `json_value_equals` detector on `/checks/violation`.
-The adapter never emits a Terror Bat verdict. Unsupported setup, missing test
+The adapter never emits a Terror Bats verdict. Unsupported setup, missing test
 filters, crashed fixtures, timeouts, missing histories and failed legacy unit
 tests are returned as `infrastructure_error`, not healthy observations.
 
@@ -89,10 +89,10 @@ key. Modified bridge intents are covered by the real tampered-replay contract.
 Copy the example bindings, replace all placeholder paths/revisions, then:
 
 ```powershell
-terrorbat run bats/lantern/same-key-race.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
-terrorbat replay RECEIPT_ID --adapters adapters.yaml --store EVIDENCE --json
-terrorbat pack run packs/lantern-hostile.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
-terrorbat pack run packs/lantern-stress.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats run bats/lantern/same-key-race.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats replay RECEIPT_ID --adapters adapters.yaml --store EVIDENCE --json
+terrorbats pack run packs/lantern-hostile.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
+terrorbats pack run packs/lantern-stress.yaml --repo TARGET --adapters adapters.yaml --store EVIDENCE --json
 python -B -m unittest discover -s adapters/lantern -p test_checker.py -v
 ```
 

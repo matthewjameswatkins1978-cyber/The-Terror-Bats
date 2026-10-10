@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use common::{TempDir, make_repo, write_spec, yaml_path};
 use serde_json::{Value, json};
-use terrorbat::builtins::{StepCtx, StepOutcome, dispatch};
-use terrorbat::process_runtime::{ProcessRegistry, ProcessRuntimeReport};
-use terrorbat::runner::{RunOptions, RunStatus, run_bat};
+use terrorbats::builtins::{StepCtx, StepOutcome, dispatch};
+use terrorbats::process_runtime::{ProcessRegistry, ProcessRuntimeReport};
+use terrorbats::runner::{RunOptions, RunStatus, run_bat};
 
 fn fixture() -> &'static str {
     env!("CARGO_BIN_EXE_tb_process_fixture")
@@ -25,7 +25,7 @@ fn invoke(
     action: &str,
     payload: Value,
     index: usize,
-) -> Result<StepOutcome, terrorbat::builtins::StepError> {
+) -> Result<StepOutcome, terrorbats::builtins::StepError> {
     let ctx = StepCtx {
         worktree: root,
         spec_dir: root,
@@ -90,7 +90,7 @@ fn persistent_process_roundtrips_stdin_and_cleans_its_tree() {
             1
         )
         .status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     invoke(
         &registry,
@@ -111,7 +111,7 @@ fn persistent_process_roundtrips_stdin_and_cleans_its_tree() {
             3
         )
         .status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     let observed = invoke(
         &registry,
@@ -156,7 +156,7 @@ fn restart_increments_generation_and_preserves_prior_identity_and_state() {
             1
         )
         .status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     kill(&registry, &temp.path, "worker", 2);
     invoke(
@@ -178,7 +178,7 @@ fn restart_increments_generation_and_preserves_prior_identity_and_state() {
             4
         )
         .status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     let report = registry.borrow().report();
     let generations = &report.handles[0].generations;
@@ -209,14 +209,14 @@ fn readiness_timeout_and_handle_errors_are_not_target_findings() {
     );
     assert_eq!(
         timeout.status,
-        terrorbat::supervisor::ExecutionStatus::TimedOut
+        terrorbats::supervisor::ExecutionStatus::TimedOut
     );
     kill(&registry, &temp.path, "quiet", 2);
     assert!(
-        matches!(invoke(&registry, &temp.path, "observe", json!({"handle":"missing"}), 3), Err(terrorbat::builtins::StepError::Malformed(message)) if message.contains("PROCESS_HANDLE_NOT_FOUND"))
+        matches!(invoke(&registry, &temp.path, "observe", json!({"handle":"missing"}), 3), Err(terrorbats::builtins::StepError::Malformed(message)) if message.contains("PROCESS_HANDLE_NOT_FOUND"))
     );
     assert!(
-        matches!(invoke(&registry, &temp.path, "write_stdin", json!({"handle":"quiet","text":"late"}), 4), Err(terrorbat::builtins::StepError::Io(message)) if message.contains("PROCESS_ALREADY_EXITED"))
+        matches!(invoke(&registry, &temp.path, "write_stdin", json!({"handle":"quiet","text":"late"}), 4), Err(terrorbats::builtins::StepError::Io(message)) if message.contains("PROCESS_ALREADY_EXITED"))
     );
 }
 
@@ -245,7 +245,7 @@ fn tcp_readiness_waits_for_a_live_listener() {
     );
     assert_eq!(
         outcome.status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     kill(&registry, &temp.path, "listener", 2);
 }
@@ -266,7 +266,7 @@ fn owned_child_is_terminated_with_its_process_group() {
     );
     assert_eq!(
         announced.status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     let output = invoke(
         &registry,
@@ -322,7 +322,7 @@ fn output_retention_is_bounded_and_reports_truncation() {
     );
     assert_eq!(
         out.status,
-        terrorbat::supervisor::ExecutionStatus::Completed
+        terrorbats::supervisor::ExecutionStatus::Completed
     );
     let observed = invoke(
         &registry,
@@ -426,7 +426,7 @@ timeout:
     );
     let original_id = output.receipt.receipt_id.clone();
     let (replay, replayed) =
-        terrorbat::receipt::replay(&original_id, Some(store)).expect("stateful replay");
+        terrorbats::receipt::replay(&original_id, Some(store)).expect("stateful replay");
     assert_eq!(replayed.manifest.run_status, RunStatus::Completed);
     assert_eq!(replay.new_execution_id, replayed.execution_id);
     assert_eq!(replay.original_receipt_id, original_id);
@@ -473,7 +473,7 @@ fn graceful_termination_is_explicitly_unsupported_on_windows() {
             json!({"handle":"server"}),
             2
         ),
-        Err(terrorbat::builtins::StepError::Unsupported(_))
+        Err(terrorbats::builtins::StepError::Unsupported(_))
     ));
     kill(&registry, &temp.path, "server", 3);
 }
@@ -528,7 +528,7 @@ timeout:
 }
 #[test]
 fn readiness_waits_observe_only_new_output() {
-    use terrorbat::supervisor::ExecutionStatus;
+    use terrorbats::supervisor::ExecutionStatus;
     let temp = TempDir::new("process-readiness-cursor");
     let registry = RefCell::new(ProcessRegistry::new("execution-fixture"));
     start(&registry, &temp.path, "server", &["server"], None);
@@ -754,7 +754,7 @@ fn process_secret_replay_requires_the_secret_again() {
     // The secret is gone now: replay must fail closed, not recover the value.
     unsafe { std::env::remove_var("TB_SECRET_PROBE_1B_B") };
     let (replay, replayed) =
-        terrorbat::receipt::replay(&original_id, Some(store.clone())).expect("replay runs");
+        terrorbats::receipt::replay(&original_id, Some(store.clone())).expect("replay runs");
     assert_eq!(replayed.manifest.run_status, RunStatus::Invalid);
     assert_eq!(replay.original_receipt_id, original_id);
     assert_no_secret_bytes(&store, sentinel.as_bytes(), "secret value");
@@ -763,10 +763,10 @@ fn process_secret_replay_requires_the_secret_again() {
 
 fn evidence_bytes(
     store: &Path,
-    steps: &[terrorbat::runner::StepRecord],
+    steps: &[terrorbats::runner::StepRecord],
     stream: &str,
 ) -> Vec<(String, Vec<u8>)> {
-    use terrorbat::evidence::EvidenceStore;
+    use terrorbats::evidence::EvidenceStore;
     let evidence = EvidenceStore::open(store).expect("open evidence store");
     // Only the steps that capture child output carry stream evidence: the
     // one-shot `command.run` and the stateful `process.observe`. Both must
@@ -977,7 +977,7 @@ fn process_secret_echoing_child_is_captured_verbatim_not_sanitised() {
 
 #[test]
 fn cleanup_names_owned_descendant() {
-    use terrorbat::supervisor::ExecutionStatus;
+    use terrorbats::supervisor::ExecutionStatus;
     let temp = TempDir::new("process-descendant");
     let registry = RefCell::new(ProcessRegistry::new("descendant-execution"));
     start(&registry, &temp.path, "parent", &["child"], None);
@@ -1078,7 +1078,7 @@ fn heir_port_from(stdout: &[u8]) -> u16 {
 
 #[test]
 fn process_wait_returns_despite_inherited_pipes_and_kill_reaps_heir() {
-    use terrorbat::supervisor::ExecutionStatus;
+    use terrorbats::supervisor::ExecutionStatus;
     // Test A: the heir INHERITS the supervisor's capture pipes and outlives
     // its parent. wait/observe must stay bounded; kill must reap the heir.
     let temp = TempDir::new("process-heir-pipes");
@@ -1166,7 +1166,7 @@ fn process_wait_returns_despite_inherited_pipes_and_kill_reaps_heir() {
 
 #[test]
 fn process_kill_reaps_group_whose_root_already_exited() {
-    use terrorbat::supervisor::ExecutionStatus;
+    use terrorbats::supervisor::ExecutionStatus;
     // Test B: the heir's stdio is nulled, so pumps see EOF at parent exit —
     // but the heir still lives in the owned group. Kill/cleanup must not
     // infer an empty group from a dead root.
@@ -1239,7 +1239,7 @@ fn cleanup_reaps_heir(mode: &str, temp_tag: &str) {
         1,
     )
     .expect("wait returns");
-    use terrorbat::supervisor::ExecutionStatus;
+    use terrorbats::supervisor::ExecutionStatus;
     assert_eq!(waited.status, ExecutionStatus::Completed);
     // Precondition: automatic cleanup faces a live owned heir, root dead.
     assert!(poll_port(port, true), "heir must be alive before cleanup");

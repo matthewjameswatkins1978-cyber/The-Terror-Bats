@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Terror Bats mark — angular bat from the ^v^ terminal sigil</title>
+  <desc>Symmetric scalloped wings, bat ears, and a downward evidence-point body. Single-colour; legible monochrome at 16px.</desc>
+  <g fill="#1a1a1a">
+    <!-- left wing: broad sweep, scalloped trailing edge -->
+    <polygon points="28,36 4,6 15,15 13,25 23,25 23,35 30,42"/>
+    <!-- right wing, mirrored -->
+    <polygon points="36,36 60,6 49,15 51,25 41,25 41,35 34,42"/>
+    <!-- ears: twin ^ peaks -->
+    <polygon points="28,30 29,21 32,28"/>
+    <polygon points="36,30 35,21 32,28"/>
+    <!-- body: downward evidence point -->
+    <polygon points="32,28 37,40 32,54 27,40"/>
+  </g>
+</svg>

@@ -12,7 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "adapters/threadmoth/adapter.py"
 FIXTURES = ROOT / "adapters/threadmoth/fixtures.py"
-TERRORBAT = ROOT / ("target/debug/terrorbat.exe" if os.name == "nt" else "target/debug/terrorbat")
+TERRORBAT = ROOT / ("target/debug/terrorbats.exe" if os.name == "nt" else "target/debug/terrorbat")
 THREADMOTH = shutil.which("threadmoth")
 
 

@@ -4,7 +4,7 @@
 mod common;
 
 use common::TempDir;
-use terrorbat::evidence::{EvidenceStore, OperationLog, rfc3339_utc};
+use terrorbats::evidence::{EvidenceStore, OperationLog, rfc3339_utc};
 
 #[test]
 fn put_get_roundtrip_and_dedup() {
@@ -74,12 +74,12 @@ fn malformed_refs_are_rejected() {
         "evidence:md5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "nonsense",
     ] {
-        let r = terrorbat::evidence::EvidenceRef(bad.to_string());
+        let r = terrorbats::evidence::EvidenceRef(bad.to_string());
         let err = store.get(&r).expect_err("must reject");
         assert!(err.to_string().contains("malformed"), "{bad}: {err}");
     }
     // Well-formed but absent.
-    let absent = terrorbat::evidence::EvidenceRef::from_hex(&"a".repeat(64));
+    let absent = terrorbats::evidence::EvidenceRef::from_hex(&"a".repeat(64));
     let err = store.get(&absent).expect_err("absent");
     assert!(err.to_string().contains("not found"), "{err}");
 }
