@@ -7,13 +7,13 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec};
-use terrorbat::campaign::{
+use terrorbats::campaign::{
     self, CampaignOptions, MAX_CAMPAIGN_RUNS, VERDICT_LABELS, exit_code_for_campaign,
     validate_campaign_id, validate_runs,
 };
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::receipt::Verdict;
-use terrorbat::runner::RunStatus;
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::receipt::Verdict;
+use terrorbats::runner::RunStatus;
 
 /// A Bat whose attack mutates the protected path; the oracle detects it.
 fn falsifying_bat(id: &str) -> String {
@@ -151,7 +151,7 @@ fn runs_3_yields_3_iterations_with_ordinary_persisted_receipts() {
         let run_dir = store.run_dir(&child.execution_id);
         assert!(run_dir.join("receipt.json").exists());
         assert!(run_dir.join("manifest.json").exists());
-        let live = terrorbat::receipt::load_receipt(&run_dir).expect("child verifies");
+        let live = terrorbats::receipt::load_receipt(&run_dir).expect("child verifies");
         assert_eq!(live.receipt_id, child.receipt_id);
         // All children share the pinned baseline.
         assert_eq!(live.target.commit, fx.head);
@@ -177,7 +177,7 @@ fn runs_3_yields_3_iterations_with_ordinary_persisted_receipts() {
     // Source target clean afterwards, still at the baseline.
     assert!(repo_is_clean(&fx.repo));
     assert_eq!(
-        terrorbat::worktree::inspect_target(&fx.repo)
+        terrorbats::worktree::inspect_target(&fx.repo)
             .expect("inspect")
             .commit,
         fx.head
@@ -263,7 +263,7 @@ fn stop_on_proven_halts_only_after_durable_proven() {
     // through the trusted path from the store.
     let store = EvidenceStore::open(&fx.store).expect("store");
     let proven_dir = store.run_dir(&out.campaign.children[1].execution_id);
-    let live = terrorbat::receipt::load_receipt(&proven_dir).expect("proven receipt durable");
+    let live = terrorbats::receipt::load_receipt(&proven_dir).expect("proven receipt durable");
     assert_eq!(live.verdict, Verdict::Proven);
 
     assert_eq!(exit_code_for_campaign(&out.campaign), 1);
@@ -402,7 +402,7 @@ fn child_tamper_fails_trusted_campaign_inspect() {
     std::fs::write(&rpath, text.replacen("benign note", "pwned = true", 1)).expect("tamper child");
     // The receipt path itself fails closed...
     assert!(
-        terrorbat::receipt::load_receipt(&child_dir)
+        terrorbats::receipt::load_receipt(&child_dir)
             .expect_err("receipt must refuse")
             .to_string()
             .contains("TB-RECEIPT-CORRUPT")
@@ -513,7 +513,7 @@ fn campaign_rendering_is_honest() {
         "  - path: loud.yaml\n",
     );
     let out = campaign::run_campaign(&opts(&fx, 1, false)).expect("campaign runs");
-    let rendered = terrorbat::presentation::render_campaign(
+    let rendered = terrorbats::presentation::render_campaign(
         &out.campaign,
         &sartorial_core::Capabilities::piped(100),
     );
@@ -528,7 +528,7 @@ fn campaign_rendering_is_honest() {
 
     let fx2 = single_quiet_pack();
     let out2 = campaign::run_campaign(&opts(&fx2, 1, false)).expect("campaign runs");
-    let rendered2 = terrorbat::presentation::render_campaign(
+    let rendered2 = terrorbats::presentation::render_campaign(
         &out2.campaign,
         &sartorial_core::Capabilities::piped(100),
     );
@@ -559,12 +559,12 @@ fn bat_change_after_pack_identification_refuses_campaign() {
         "  - path: q.yaml\n  - path: m.yaml\n",
     );
     let mutable_bat = fx.pack.parent().expect("pack dir").join("m.yaml");
-    let original_bat = terrorbat::pack::identify_pack_file(&fx.pack)
+    let original_bat = terrorbats::pack::identify_pack_file(&fx.pack)
         .expect("pack identifies")
         .entries[1]
         .bat
         .clone();
-    let mut before_child = |iteration: u64, entry_index: usize| -> terrorbat::error::Result<()> {
+    let mut before_child = |iteration: u64, entry_index: usize| -> terrorbats::error::Result<()> {
         if iteration == 1 && entry_index == 1 {
             std::fs::write(&mutable_bat, falsifying_bat("mutable"))
                 .expect("rewrite bat mid-campaign");
@@ -594,7 +594,7 @@ fn bat_change_after_pack_identification_refuses_campaign() {
     assert_eq!(store.list_runs().len(), 2);
     let mut saw_quiet = false;
     for run in store.list_runs() {
-        let live = terrorbat::receipt::load_receipt(&store.run_dir(&run))
+        let live = terrorbats::receipt::load_receipt(&store.run_dir(&run))
             .expect("ordinary receipt stays independently readable");
         if live.verdict == Verdict::NotObserved {
             saw_quiet = true;
@@ -651,7 +651,10 @@ fn campaign_load_refuses_unsupported_schema_version() {
     let msg = err.to_string();
     assert!(msg.contains("TB-CAMPAIGN-CORRUPT"), "{msg}");
     assert!(msg.contains("terrorbat/campaign/v2"), "{msg}");
-    assert!(msg.contains(terrorbat::campaign::CAMPAIGN_VERSION), "{msg}");
+    assert!(
+        msg.contains(terrorbats::campaign::CAMPAIGN_VERSION),
+        "{msg}"
+    );
     assert!(msg.contains("not trusted"), "{msg}");
 }
 

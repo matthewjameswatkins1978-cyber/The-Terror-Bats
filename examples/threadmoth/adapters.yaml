@@ -1,12 +1,12 @@
 # Threadmoth hostile-pack bindings (example — copy aside and fix the paths).
 #
-# Terror Bat resolves a `program` entry that contains a directory relative to
+# Terror Bats resolves a `program` entry that contains a directory relative to
 # THIS file, but `args` entries are passed through verbatim, and the adapter
 # execute process runs with the disposable worktree as its cwd. So both paths
 # below must be ABSOLUTE (or bare PATH names). Replace the tokens, then run:
 #
-#   terrorbat pack check packs/threadmoth-hostile.yaml
-#   terrorbat pack run packs/threadmoth-hostile.yaml --repo <clean-target> \
+#   terrorbats pack check packs/threadmoth-hostile.yaml
+#   terrorbats pack run packs/threadmoth-hostile.yaml --repo <clean-target> \
 #       --adapters <your-copy-of-this-file>
 version: terrorbat-adapters/v1
 adapters:

@@ -1,4 +1,4 @@
-//! Deterministic executable fixture for the Terror Bat M8 protocol tests.
+//! Deterministic executable fixture for the Terror Bats M8 protocol tests.
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 

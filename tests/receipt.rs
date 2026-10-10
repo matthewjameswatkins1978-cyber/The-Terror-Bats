@@ -6,10 +6,10 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec, yaml_path};
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::oracle::OracleResult;
-use terrorbat::receipt::{self, Verdict};
-use terrorbat::runner::{RunOptions, RunStatus, exit_code_for, load_manifest, run_bat};
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::oracle::OracleResult;
+use terrorbats::receipt::{self, Verdict};
+use terrorbats::runner::{RunOptions, RunStatus, exit_code_for, load_manifest, run_bat};
 
 fn opts(bat: &Path, repo: &Path, store: &Path) -> RunOptions {
     RunOptions {
@@ -67,8 +67,8 @@ fn non_falsifying_bat() -> String {
 
 /// Single human presentation path for receipt honesty assertions: the
 /// Sartorial projection under deterministic pipe capabilities.
-fn present(r: &terrorbat::receipt::Receipt) -> String {
-    terrorbat::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
+fn present(r: &terrorbats::receipt::Receipt) -> String {
+    terrorbats::presentation::render_receipt(r, &sartorial_core::Capabilities::piped(100))
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn falsification_flow_produces_proven_receipt() {
     assert!(r.claim_text.contains("protected config"));
     assert_eq!(r.target.commit, head);
     assert_eq!(r.reproduction.commit, head);
-    assert!(r.reproduction.replay_command.contains("terrorbat replay"));
+    assert!(r.reproduction.replay_command.contains("terrorbats replay"));
 
     // Human rendering: honest about PROVEN's scope and isolation.
     let rendered = present(r);
@@ -356,7 +356,7 @@ fn command_verifier_requires_declared_process_spawn() {
 
 #[test]
 fn verdict_mapping_covers_every_status() {
-    use terrorbat::receipt::verdict_for;
+    use terrorbats::receipt::verdict_for;
     // Hard rules: no mechanical failure may ever map to Proven.
     for status in [
         RunStatus::TimedOut,
@@ -581,7 +581,7 @@ fn forged_id(c: char) -> String {
     format!("receipt:sha256:{}", c.to_string().repeat(64))
 }
 
-fn fresh_proven_run(tag: &str) -> (TempDir, PathBuf, PathBuf, terrorbat::runner::RunOutput) {
+fn fresh_proven_run(tag: &str) -> (TempDir, PathBuf, PathBuf, terrorbats::runner::RunOutput) {
     let dir = TempDir::new(tag);
     let repo = dir.join("repo");
     make_repo(&repo);
@@ -597,7 +597,7 @@ fn fresh_proven_run(tag: &str) -> (TempDir, PathBuf, PathBuf, terrorbat::runner:
 /// field on disk, and require every trusted path to fail closed.
 fn integrity_case(
     label: &str,
-    tamper: impl FnOnce(&terrorbat::receipt::Receipt) -> (String, String),
+    tamper: impl FnOnce(&terrorbats::receipt::Receipt) -> (String, String),
 ) {
     let (_dir, _repo, store, out) = fresh_proven_run("rc-integrity");
     let rid = out.receipt.receipt_id.clone();
@@ -626,7 +626,7 @@ fn integrity_case(
 
 #[test]
 fn any_receipt_content_mutation_is_refused() {
-    type TamperFn = Box<dyn Fn(&terrorbat::receipt::Receipt) -> (String, String)>;
+    type TamperFn = Box<dyn Fn(&terrorbats::receipt::Receipt) -> (String, String)>;
     let cases: Vec<(&str, TamperFn)> = vec![
         (
             "A verdict",

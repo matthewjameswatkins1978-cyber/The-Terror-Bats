@@ -1,4 +1,4 @@
-//! Terror Bat — falsification and assurance framework.
+//! Terror Bats — falsification and assurance framework.
 //!
 //! M1: Bat Spec parsing / parameter resolution / canonicalisation / identity.
 //! M2: supervised process-tree execution.

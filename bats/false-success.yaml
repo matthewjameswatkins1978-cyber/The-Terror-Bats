@@ -4,13 +4,13 @@
 #          repository unmodified.
 # Attack:  a fixture command that prints success-looking output AND mutates
 #          a file while exiting 0. On Windows this uses cmd EXPLICITLY
-#          (program: cmd) — Terror Bat never wraps steps in an implicit
+#          (program: cmd) — Terror Bats never wraps steps in an implicit
 #          shell; the Unix equivalent would be `sh -c`.
 # Oracle:  deterministic conjunction: the stdout really claims success, and
 #          the diff really contains the mutation. Prose judgement nowhere.
 #
 # Against any clean repository this yields PROVEN: output that looks green
-# is contradicted by repository evidence. This is the Terror Bat thesis in
+# is contradicted by repository evidence. This is the Terror Bats thesis in
 # one Bat: "what could still be wrong while the output says PASSED?"
 
 version: terrorbat/v1

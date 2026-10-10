@@ -89,7 +89,7 @@ impl Verdict {
             }
             Verdict::Invalid => "The Bat or experiment was malformed; nothing was tested.",
             Verdict::InfrastructureError => {
-                "Terror Bat or an external dependency failed in a way that invalidated the \
+                "Terror Bats or an external dependency failed in a way that invalidated the \
                  experiment. Infrastructure failure is NOT a failure of the tested claim."
             }
         }
@@ -230,7 +230,7 @@ fn isolation_block() -> IsolationBlock {
         guarantees: vec![
             "worktree mutations reversible (rollback of the disposable worktree)".to_string(),
             "worktree mutations observable (diff/status evidence)".to_string(),
-            "source tree protected from Terror Bat's built-in operations".to_string(),
+            "source tree protected from Terror Bats' built-in operations".to_string(),
             "process-tree ownership within the M2 model".to_string(),
         ],
         non_guarantees: vec![
@@ -380,9 +380,9 @@ fn replay_command(receipt: &Receipt, id: &str) -> String {
             .iter()
             .any(|step| step.adapter_provenance.is_some());
     if has_external {
-        format!("terrorbat replay {id} --adapters adapters.yaml")
+        format!("terrorbats replay {id} --adapters adapters.yaml")
     } else {
-        format!("terrorbat replay {id}")
+        format!("terrorbats replay {id}")
     }
 }
 

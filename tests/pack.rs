@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use terrorbat::pack::{identify_pack_file, pack_identity};
+use terrorbats::pack::{identify_pack_file, pack_identity};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -88,7 +88,7 @@ fn pack_path(dir: &Path) -> PathBuf {
     dir.join("pack.yaml")
 }
 
-fn identify(dir: &Path) -> terrorbat::pack::IdentifiedPack {
+fn identify(dir: &Path) -> terrorbats::pack::IdentifiedPack {
     identify_pack_file(&pack_path(dir)).unwrap_or_else(|e| panic!("pack identifies: {e}"))
 }
 
@@ -133,7 +133,7 @@ fn valid_pack_identifies_with_ordered_entries() {
     }
     // Effective bat identities match direct identification of the bat files.
     let direct_a =
-        terrorbat::identify_spec_file(&dir.join("a.yaml"), &terrorbat::ParamOverrides::default())
+        terrorbats::identify_spec_file(&dir.join("a.yaml"), &terrorbats::ParamOverrides::default())
             .expect("bat a identifies");
     assert_eq!(pack.entries[0].bat, direct_a.identities.bat);
 }
@@ -148,15 +148,16 @@ fn pack_params_flow_into_effective_bat_identity() {
         "version: terrorbat-pack/v1\nid: param-pack\nbats:\n  - path: p.yaml\n    params:\n      greeting: overridden\n",
     );
     let pack = identify(&dir);
-    let expected = terrorbat::identify_spec_file(
+    let expected = terrorbats::identify_spec_file(
         &dir.join("p.yaml"),
-        &terrorbat::ParamOverrides::parse(&["greeting=overridden".to_string()]).expect("overrides"),
+        &terrorbats::ParamOverrides::parse(&["greeting=overridden".to_string()])
+            .expect("overrides"),
     )
     .expect("bat p identifies");
     assert_eq!(pack.entries[0].bat, expected.identities.bat);
     // And the override actually changes the effective bat.
     let plain =
-        terrorbat::identify_spec_file(&dir.join("p.yaml"), &terrorbat::ParamOverrides::default())
+        terrorbats::identify_spec_file(&dir.join("p.yaml"), &terrorbats::ParamOverrides::default())
             .expect("bat p identifies");
     assert_ne!(pack.entries[0].bat, plain.identities.bat);
 }

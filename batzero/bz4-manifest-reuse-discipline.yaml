@@ -6,7 +6,7 @@
 #
 # Falsification observation: any of the four infrastructure concerns
 # (HTTP API, PostgreSQL, migrations, MCP) missing from go.mod, i.e.
-# plausibly hand-rolled. Judged purely from manifest facts — Terror Bat
+# plausibly hand-rolled. Judged purely from manifest facts — Terror Bats
 # needs to understand nothing about Go.
 #
 # Expected verdict: NOT OBSERVED at the pinned commit (all four present).

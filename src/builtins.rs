@@ -4,7 +4,7 @@
 //!
 //! Honesty: built-in path validation is not a hostile-code sandbox. An
 //! arbitrary child program spawned by `command.run` can still access host
-//! paths; only Terror Bat's own built-in operations are confined.
+//! paths; only Terror Bats' own built-in operations are confined.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -239,7 +239,7 @@ fn malformed(msg: impl Into<String>) -> StepError {
 ///
 /// Accepts a plain string, or a runtime-only secret reference
 /// `{"$secret": "NAME"}` resolved from the execution environment at dispatch
-/// time. The resolved value only ever lives in Terror Bat's own memory and in
+/// time. The resolved value only ever lives in Terror Bats' own memory and in
 /// the spawned child's environment: the declarative configuration (Bat source,
 /// canonical spec, receipt invocation payloads) keeps the reference, so replay
 /// resolves it again and a missing variable fails closed instead of running

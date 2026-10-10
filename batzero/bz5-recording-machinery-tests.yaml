@@ -1,7 +1,7 @@
 # Bat Zero arm 5 — the recording machinery's own tests pass at the pin.
 #
 # A real language-ecosystem verifier: `go test` runs inside the disposable
-# worktree through the M2 supervisor. Terror Bat does not understand Go;
+# worktree through the M2 supervisor. Terror Bats does not understand Go;
 # the command verifier is the language-neutral escape hatch (M5).
 #
 # `network` is declared because the Go toolchain may fetch modules from

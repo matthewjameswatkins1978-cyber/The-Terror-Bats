@@ -1,4 +1,4 @@
-# Terror Bat generic-species pack (Packet 1).
+# Terror Bats generic-species pack (Packet 1).
 #
 # Every entry is a portable, target-agnostic attack specimen: built-ins
 # only, no shell, no Lantern/Threadmoth coupling, Windows + Linux clean.
@@ -6,9 +6,9 @@
 # the matching quiet controls live in tests/species.rs (a control is a
 # test shape, not a shippable attack, so it is not packed).
 #
-# Validate: terrorbat pack check packs/species.yaml
-# Identify: terrorbat pack id packs/species.yaml
-# Campaign: terrorbat pack run packs/species.yaml --repo <clean-repo>
+# Validate: terrorbats pack check packs/species.yaml
+# Identify: terrorbats pack id packs/species.yaml
+# Campaign: terrorbats pack run packs/species.yaml --repo <clean-repo>
 
 version: terrorbat-pack/v1
 

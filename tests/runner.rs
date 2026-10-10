@@ -8,8 +8,8 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{TempDir, git, make_repo, repo_is_clean, write_spec, yaml_path};
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::runner::{CleanupStatus, RunOptions, RunOutput, RunStatus, exit_code_for, run_bat};
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::runner::{CleanupStatus, RunOptions, RunOutput, RunStatus, exit_code_for, run_bat};
 
 fn opts(bat: &Path, repo: &Path, store: &Path) -> RunOptions {
     RunOptions {
@@ -437,12 +437,12 @@ fn manifest_json_is_wellformed_and_reloadable() {
     let value: serde_json::Value = serde_json::from_str(&text).expect("manifest parses");
     assert_eq!(value["version"], "terrorbat/run/v0");
     assert_eq!(value["execution_id"], out.execution_id);
-    let reloaded = terrorbat::runner::load_manifest(&PathBuf::from(&out.manifest.run_dir))
+    let reloaded = terrorbats::runner::load_manifest(&PathBuf::from(&out.manifest.run_dir))
         .expect("reload manifest");
     assert_eq!(reloaded.run_status, RunStatus::Completed);
     assert_eq!(reloaded.bat.bat_sha, out.manifest.bat.bat_sha);
     // Bat identity matches the identity pipeline for the same spec.
-    let identified = terrorbat::identify_spec_file(&bat, &terrorbat::ParamOverrides::default())
+    let identified = terrorbats::identify_spec_file(&bat, &terrorbats::ParamOverrides::default())
         .expect("identify");
     assert_eq!(reloaded.bat.bat_sha, identified.identities.bat);
 }

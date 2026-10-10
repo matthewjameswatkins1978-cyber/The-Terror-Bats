@@ -1,10 +1,10 @@
 //! Human presentation via sartorial-core (https://github.com/matthewjameswatkins1978-cyber/Sartorial, MIT).
 //!
-//! Governing rule: **Terror Bat owns truth. Sartorial owns presentation.**
+//! Governing rule: **Terror Bats owns truth. Sartorial owns presentation.**
 //!
 //! ```text
-//! Terror Bat Receipt → projection → sartorial_core::Document
-//!   → Workwear + Terror Bat Theme → ResolvedStyle + Capabilities
+//! Terror Bats Receipt → projection → sartorial_core::Document
+//!   → Workwear + Terror Bats Theme → ResolvedStyle + Capabilities
 //!   → TerminalRenderer (TTY) / PlainRenderer (pipes)
 //! ```
 //!
@@ -27,16 +27,16 @@ use crate::doctor::DoctorReport;
 use crate::receipt::{Receipt, ReplayReport};
 use crate::runner::{RunStatus, TERRORBAT_VERSION};
 
-/// The canonical Terror Bat mark. ASCII-safe by design: it is the product
+/// The canonical Terror Bats mark. ASCII-safe by design: it is the product
 /// sigil, not a fallback, and is used identically on every human surface
 /// whether or not Unicode is available.
 pub const SIGIL: &str = "\\^v^/";
 
-/// Application-owned theme: Terror Bat roles mapped to paint. Colours
+/// Application-owned theme: Terror Bats roles mapped to paint. Colours
 /// express presentation roles only and never change meaning, ordering,
 /// verdicts, statuses, or exit codes.
 pub fn terrorbat_theme() -> Theme {
-    Theme::builder("Terror Bat")
+    Theme::builder("Terror Bats")
         .accent(AnsiColor::BrightRed)
         .heading(AnsiColor::Red)
         .success(AnsiColor::Green)
@@ -76,7 +76,7 @@ pub fn detect_capabilities() -> Capabilities {
     )
 }
 
-/// Resolve Workwear + Terror Bat theme against explicit capabilities.
+/// Resolve Workwear + Terror Bats theme against explicit capabilities.
 pub fn resolve_style(caps: &Capabilities) -> ResolvedStyle {
     let symbols = if caps.unicode {
         SymbolMode::Unicode
@@ -359,10 +359,10 @@ pub fn document_receipt(r: &Receipt, caps: &Capabilities) -> Document {
 pub fn document_doctor(rep: &DoctorReport, caps: &Capabilities) -> Document {
     let mut doc = Document::new();
     doc = doc.push(Block::Details {
-        text: title_text("TERROR BAT DOCTOR", caps.width),
+        text: title_text("TERROR BATS DOCTOR", caps.width),
     });
     doc = doc.push(Block::Title {
-        text: "TERROR BAT DOCTOR".to_string(),
+        text: "TERROR BATS DOCTOR".to_string(),
         version: Some(TERRORBAT_VERSION.to_string()),
     });
 
@@ -423,10 +423,10 @@ pub fn document_doctor(rep: &DoctorReport, caps: &Capabilities) -> Document {
 pub fn document_replay(report: &ReplayReport, caps: &Capabilities) -> Document {
     let mut doc = Document::new();
     doc = doc.push(Block::Details {
-        text: title_text("TERROR BAT REPLAY", caps.width),
+        text: title_text("TERROR BATS REPLAY", caps.width),
     });
     doc = doc.push(Block::Title {
-        text: "TERROR BAT REPLAY".to_string(),
+        text: "TERROR BATS REPLAY".to_string(),
         version: None,
     });
     let yn = |same: bool| {

@@ -15,9 +15,9 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{TempDir, make_repo, repo_is_clean, write_spec};
-use terrorbat::evidence::EvidenceStore;
-use terrorbat::receipt::Verdict;
-use terrorbat::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
+use terrorbats::evidence::EvidenceStore;
+use terrorbats::receipt::Verdict;
+use terrorbats::runner::{CleanupStatus, RunOptions, RunStatus, run_bat};
 
 fn species_bat(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -59,7 +59,7 @@ fn fixture(tag: &str) -> Fixture {
 
 /// Read the captured git diff of a run as text (proof the evidence is
 /// preserved and re-readable, not merely referenced).
-fn diff_text(fx: &Fixture, out: &terrorbat::runner::RunOutput) -> String {
+fn diff_text(fx: &Fixture, out: &terrorbats::runner::RunOutput) -> String {
     let store = EvidenceStore::open(&fx.store).expect("store opens");
     let diff_ref = out
         .manifest
@@ -131,7 +131,7 @@ fn durability_write_survives_into_observable_state() {
     // The reopen seam: replay in a fresh worktree reproduces the verdict
     // from fresh durable state.
     let (report, replayed) =
-        terrorbat::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
+        terrorbats::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
             .expect("replay runs");
     assert!(report.same_verdict, "{report:?}");
     assert!(report.same_oracle, "{report:?}");
@@ -341,7 +341,7 @@ fn false_success_exit_zero_with_mutation_is_proven() {
         .oracle
         .conditions
         .iter()
-        .filter(|c| c.result == terrorbat::oracle::OracleResult::Falsified)
+        .filter(|c| c.result == terrorbats::oracle::OracleResult::Falsified)
         .count();
     assert_eq!(fired, 3, "{:?}", out.receipt.oracle.conditions);
 }
@@ -388,7 +388,7 @@ fn replay_reproduces_every_time_without_mutating_the_original() {
 
     for _ in 0..2 {
         let (report, replayed) =
-            terrorbat::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
+            terrorbats::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
                 .expect("repeated replay runs");
         assert!(report.same_verdict, "{report:?}");
         assert!(report.same_oracle, "{report:?}");
@@ -400,7 +400,7 @@ fn replay_reproduces_every_time_without_mutating_the_original() {
     // The original receipt still loads through the trusted path, byte
     // for byte what the first run wrote.
     let store = EvidenceStore::open(&fx.store).expect("store opens");
-    let live = terrorbat::receipt::load_receipt(&store.run_dir(&out.receipt.execution_id))
+    let live = terrorbats::receipt::load_receipt(&store.run_dir(&out.receipt.execution_id))
         .expect("original receipt intact");
     assert_eq!(live.receipt_id, out.receipt.receipt_id);
     assert_eq!(live.verdict, Verdict::Proven);
@@ -424,7 +424,7 @@ fn replay_quiet_control_stays_quiet() {
     let out = run_bat(&opts(&bat, &fx.repo, &fx.store)).expect("control runs");
     assert_eq!(out.receipt.verdict, Verdict::NotObserved);
     let (report, replayed) =
-        terrorbat::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
+        terrorbats::receipt::replay(&out.receipt.receipt_id, Some(fx.store.clone()))
             .expect("replay runs");
     assert!(report.same_verdict, "{report:?}");
     assert_eq!(replayed.receipt.verdict, Verdict::NotObserved);
@@ -498,7 +498,7 @@ fn filesystem_escape_is_refused_as_policy_never_a_finding() {
 #[test]
 fn species_pack_resolves_to_eight_portable_bats() {
     let pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/species.yaml");
-    let identified = terrorbat::pack::identify_pack_file(&pack).expect("species pack identifies");
+    let identified = terrorbats::pack::identify_pack_file(&pack).expect("species pack identifies");
     assert_eq!(identified.entries.len(), 8);
     for entry in &identified.entries {
         assert!(
@@ -513,14 +513,14 @@ fn species_pack_resolves_to_eight_portable_bats() {
 fn species_pack_campaign_proves_every_member() {
     let fx = fixture("sp-pack-campaign");
     let pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/species.yaml");
-    let opts = terrorbat::campaign::CampaignOptions {
+    let opts = terrorbats::campaign::CampaignOptions {
         pack_path: pack,
         repo: fx.repo.clone(),
         store_root: Some(fx.store.clone()),
         runs: 1,
         stop_on_proven: false,
     };
-    let out = terrorbat::campaign::run_campaign(&opts).expect("species campaign runs");
+    let out = terrorbats::campaign::run_campaign(&opts).expect("species campaign runs");
     assert_eq!(out.campaign.children.len(), 8);
     for child in &out.campaign.children {
         assert_eq!(
@@ -531,7 +531,7 @@ fn species_pack_campaign_proves_every_member() {
         );
     }
     assert_eq!(
-        terrorbat::campaign::exit_code_for_campaign(&out.campaign),
+        terrorbats::campaign::exit_code_for_campaign(&out.campaign),
         1
     );
     assert!(repo_is_clean(&fx.repo));
