@@ -30,3 +30,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked
+      - name: Linux bundle + release-path smoke (no tag)
+        run: |
+          cargo build --release --bin terrorbats
+          bash dist/smoke-linux-bundle.sh --workflow 'pr/${{ github.event.pull_request.number || github.sha }}'

@@ -86,9 +86,14 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked
       - run: cargo build --release --bin terrorbats
-      - name: Install smoke
+      - name: Package tarball
+        run: ./dist/pack-linux.sh --workflow 'release/${{ github.ref_name }}'
+      - name: Install smoke (from extracted bundle)
         run: |
-          ./install/install.sh --prefix "$RUNNER_TEMP/tb-root"
+          rm -rf "$RUNNER_TEMP/tb-bundle" "$RUNNER_TEMP/tb-root"
+          mkdir -p "$RUNNER_TEMP/tb-bundle"
+          tar -xzf dist/terrorbats-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP/tb-bundle"
+          "$RUNNER_TEMP/tb-bundle/install.sh" --prefix "$RUNNER_TEMP/tb-root"
           "$RUNNER_TEMP/tb-root/bin/terrorbats" --version
       - name: Doctor smoke
         run: '"$RUNNER_TEMP/tb-root/bin/terrorbats" doctor'
@@ -106,8 +111,6 @@ jobs:
           echo "$RECEIPT_JSON" | grep -q '"verdict": "NOT OBSERVED"'
           RID="$(echo "$RECEIPT_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["receipt_id"])')"
           "$BIN" replay "$RID" --store "$STORE" > /dev/null
-      - name: Package tarball
-        run: ./dist/pack-linux.sh --workflow 'release/${{ github.ref_name }}'
       - uses: actions/upload-artifact@v4
         with:
           name: linux-bundle
@@ -123,6 +126,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # The notes renderer lives in the repo; pin the exact tag/ref.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
       - uses: actions/download-artifact@v4
         with:
           path: bundles
