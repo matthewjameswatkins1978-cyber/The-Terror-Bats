@@ -4,12 +4,15 @@
 
 .DESCRIPTION
   Removes exactly what install.ps1 owns: the installed terrorbats.exe
-  (plus installed completions shipped beside it) and, only when it was
-  added by the installer, the PATH entry. Never touches Bat files,
-  evidence stores, repositories, receipts, or unrelated PATH entries.
+  (plus installed completions shipped beside it) and, only when the
+  installer appended it (ownership marker .terrorbats-path-added present),
+  the PATH entry. A pre-existing entry without the marker is preserved.
+  Never touches Bat files, evidence stores, repositories, receipts, or
+  unrelated PATH entries.
 #>
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\TerrorBats\bin')
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\TerrorBats\bin'),
+    [ValidateSet('User', 'Process')][string]$PathScope = 'User'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,13 +32,20 @@ foreach ($asset in @('completions', 'terrorbats.1.txt')) {
     }
 }
 
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -like "*$InstallDir*") {
-    $entries = $userPath -split ';' | Where-Object { $_ -ne '' -and $_ -ne $InstallDir }
-    [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
-    Write-Host "PATH CHANGED: removed '$InstallDir' from the USER Path environment variable."
+$marker = Join-Path $InstallDir '.terrorbats-path-added'
+$scopePath = [Environment]::GetEnvironmentVariable('Path', $PathScope)
+$scopeEntries = @($scopePath -split ';' | Where-Object { $_ -ne '' })
+if ((Test-Path $marker) -and ($scopeEntries -contains $InstallDir)) {
+    # Exact-entry removal: siblings such as TerrorBats-Other are untouched.
+    $entries = @($scopeEntries | Where-Object { $_ -ne $InstallDir })
+    [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), $PathScope)
+    Write-Host "PATH CHANGED: removed installer-added '$InstallDir' from the $PathScope Path environment variable."
+    Remove-Item $marker -Force
+} elseif (Test-Path $marker) {
+    Write-Host "PATH unchanged: ownership marker present but '$InstallDir' not on the $PathScope Path; removing the marker."
+    Remove-Item $marker -Force
 } else {
-    Write-Host "PATH unchanged: '$InstallDir' was not present in the USER Path."
+    Write-Host "PATH unchanged: no installer ownership marker; pre-existing entries preserved."
 }
 
 if ((Test-Path $InstallDir) -and -not (Get-ChildItem $InstallDir -Force | Select-Object -First 1)) {

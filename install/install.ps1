@@ -6,8 +6,16 @@
   Installs terrorbats.exe from this bundle (or a repo release build)
   into a user-local directory. No administrator rights required.
   Never modifies PATH unless -AddToUserPath is explicitly passed,
-  and reports exactly what changed when it does. Finishes with
+  and reports exactly what changed when it does. When the installer
+  appends the directory itself, it leaves an ownership marker
+  (.terrorbats-path-added) so the uninstaller only ever removes PATH
+  entries this installer added — never pre-existing ones. Finishes with
   `terrorbats --version` and `terrorbats doctor` as install proof.
+
+.PARAMETER PathScope
+  Which environment scope to read/modify for the PATH entry: User
+  (default, persistent) or Process (current session only; used by the
+  automated regression tests so CI never touches the real user PATH).
 
 .EXAMPLE
   .\install.ps1
@@ -17,7 +25,8 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\TerrorBats\bin'),
     [string]$SourceDir = $PSScriptRoot,
     [switch]$AddToUserPath,
-    [switch]$Force
+    [switch]$Force,
+    [ValidateSet('User', 'Process')][string]$PathScope = 'User'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,17 +56,24 @@ $version = & $dest --version
 Write-Host $version
 
 if ($AddToUserPath) {
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$InstallDir*") {
-        [Environment]::SetEnvironmentVariable('Path', "$userPath;$InstallDir", 'User')
-        Write-Host "PATH CHANGED: appended '$InstallDir' to the USER Path environment variable."
+    $scopePath = [Environment]::GetEnvironmentVariable('Path', $PathScope)
+    # Exact entry comparison: substring matching would confuse sibling
+    # directories (e.g. TerrorBats-Other) or paths containing wildcards.
+    $scopeEntries = @($scopePath -split ';' | Where-Object { $_ -ne '' })
+    if ($scopeEntries -notcontains $InstallDir) {
+        [Environment]::SetEnvironmentVariable('Path', "$scopePath;$InstallDir", $PathScope)
+        # Ownership is recorded only after the append succeeds; with
+        # $ErrorActionPreference='Stop' a failed write aborts before the marker.
+        Set-Content -NoNewline -Encoding ascii (Join-Path $InstallDir '.terrorbats-path-added') "appended by install.ps1"
+        Write-Host "PATH CHANGED: appended '$InstallDir' to the $PathScope Path environment variable."
         Write-Host "Open a new terminal for the change to take effect."
     } else {
-        Write-Host "PATH unchanged: '$InstallDir' is already present in the USER Path."
+        Write-Host "PATH unchanged: '$InstallDir' is already present; pre-existing entries are never claimed (no ownership marker written)."
     }
 } else {
     Write-Host "PATH not modified (pass -AddToUserPath to change it explicitly)."
-    if ($env:Path -notlike "*$InstallDir*") {
+    $sessionEntries = @($env:Path -split ';' | Where-Object { $_ -ne '' })
+    if ($sessionEntries -notcontains $InstallDir) {
         Write-Host "Note: '$InstallDir' is not on PATH in this session; invoke via the full path or re-open a terminal after -AddToUserPath."
     }
 }
