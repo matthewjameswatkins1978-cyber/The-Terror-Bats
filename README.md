@@ -58,7 +58,7 @@ terrorbats adapter inspect process
 - Escaped/out-of-group descendants unsupported; `process` stays
   `builtin-partial`.
 - `http`/`tcp` have no native builtins yet (use `curl`/explicit clients).
-- This is 0.2.0-rc.1 for serious evaluation — not certification, not a
+- This is 1.0.0-rc.1 for serious evaluation — not certification, not a
   sandbox, not formally verified.
 
 ## Documents
