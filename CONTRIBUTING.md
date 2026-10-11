@@ -1,10 +1,9 @@
 # Contributing
 
-Release branch discipline: `release/0.2.0-rc.1` accepts release-blocking
-fixes, tests, naming, documentation, CLI usability, visual identity,
-packaging, install/uninstall, automation, provenance, performance
-regressions, and security/evidence honesty. New features, new adapter
-families, GUIs, and platform ports wait for after RC1.
+Release branch discipline: `release/1.0.0-rc.1-version` is version-only
+convergence based on reviewed main `655c8e7`. It may update package
+metadata, release-facing labels, docs, and tag/version mismatch checks.
+Unrelated features, new adapters, GUIs, and platform ports wait for after RC1.
 
 ## Gates (run before every push)
 
