@@ -10,7 +10,7 @@
   release workflow and by the release-notes dry-run regression test.
 
 .EXAMPLE
-  pwsh -NoProfile -File dist/release-notes.ps1 -Version 0.2.0-rc.1
+  pwsh -NoProfile -File dist/release-notes.ps1 -Version 1.0.0-rc.1
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Version
