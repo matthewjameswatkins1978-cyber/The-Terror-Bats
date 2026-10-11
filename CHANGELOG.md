@@ -2,11 +2,11 @@
 
 Significant user-visible changes only. No commit-message dumps.
 
-## 0.2.0-rc.1
+## 1.0.0-rc.1
 
 First public release candidate (Windows + Linux x86-64).
 
-- Executable and crate renamed to `terrorbats`; version `0.2.0-rc.1`.
+- Executable and crate renamed to `terrorbats`; version `1.0.0-rc.1`.
 - Stateful process adapter: supervised handles with generations —
   start, condition-based readiness with per-stream cursors, stdin,
   bounded observe, wait, Unix SIGTERM terminate, forced kill, restart.

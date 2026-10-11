@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The Terror Bats Framework 0.2.0-rc.1 — uninstaller (Windows).
+  The Terror Bats Framework 1.0.0-rc.1 — uninstaller (Windows).
 
 .DESCRIPTION
   Removes exactly what install.ps1 owns: the installed terrorbats.exe

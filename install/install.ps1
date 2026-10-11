@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The Terror Bats Framework 0.2.0-rc.1 — release installer (Windows).
+  The Terror Bats Framework 1.0.0-rc.1 — release installer (Windows).
 
 .DESCRIPTION
   Installs terrorbats.exe from this bundle (or a repo release build)

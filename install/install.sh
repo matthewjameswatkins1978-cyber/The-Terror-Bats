@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Terror Bats Framework 0.2.0-rc.1 — release installer (Linux).
+# The Terror Bats Framework 1.0.0-rc.1 — release installer (Linux).
 # No sudo required. Never edits shell RC files. Finishes with
 # `terrorbats --version` and `terrorbats doctor` as install proof.
 set -eu

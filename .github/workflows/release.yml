@@ -31,6 +31,12 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked
       - run: cargo build --release --bin terrorbats
+      - name: Validate tag matches Windows binary version
+        shell: pwsh
+        run: |
+          $expected = "terrorbats $(($env:GITHUB_REF_NAME -replace '^v', ''))"
+          $actual = (& .\target\release\terrorbats.exe --version).Trim()
+          if ($actual -cne $expected) { throw "Tag/binary mismatch: expected '$expected', got '$actual'" }
       - name: Install smoke
         shell: pwsh
         run: |
@@ -86,6 +92,14 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked
       - run: cargo build --release --bin terrorbats
+      - name: Validate tag matches Linux binary version
+        run: |
+          expected="terrorbats ${GITHUB_REF_NAME#v}"
+          actual="$(./target/release/terrorbats --version)"
+          if [ "$actual" != "$expected" ]; then
+            echo "Tag/binary mismatch: expected $expected, got $actual" >&2
+            exit 1
+          fi
       - name: Package tarball
         run: ./dist/pack-linux.sh --workflow 'release/${{ github.ref_name }}'
       - name: Install smoke (from extracted bundle)
