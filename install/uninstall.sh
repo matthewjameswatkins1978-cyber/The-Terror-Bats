@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Terror Bats Framework 0.2.0-rc.1 — uninstaller (Linux).
+# The Terror Bats Framework 1.0.0-rc.1 — uninstaller (Linux).
 # Removes exactly what install.sh owns. Never touches Bat files,
 # evidence stores, repositories, receipts, or shell RC files.
 set -eu
