@@ -5,7 +5,7 @@ cargo build --release --bin terrorbats
 terrorbats --version
 ```
 
-Expect exactly `terrorbats 0.2.0-rc.1`.
+Expect exactly `terrorbats 1.0.0-rc.1`.
 
 ```text
 terrorbats doctor
