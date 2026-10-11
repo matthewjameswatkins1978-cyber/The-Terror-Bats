@@ -1,4 +1,4 @@
-# The Terror Bats Framework — User Manual (0.2.0-rc.1)
+# The Terror Bats Framework — User Manual (1.0.0-rc.1)
 
 > A Bat is one falsification experiment.
 
@@ -88,7 +88,7 @@ terrorbats --version
 terrorbats doctor
 ```
 
-`--version` prints exactly `terrorbats 0.2.0-rc.1`. `doctor` checks Git,
+`--version` prints exactly `terrorbats 1.0.0-rc.1`. `doctor` checks Git,
 the evidence store, worktree capability, and process supervision, and
 reports optional tools without scary failures for absent ones.
 
@@ -460,7 +460,7 @@ The run manifest/receipt is authoritative; the exit code is a summary.
 
 ## 28. Version/protocol compatibility
 
-- Product: `terrorbats 0.2.0-rc.1` (`terrorbats --version`).
+- Product: `terrorbats 1.0.0-rc.1` (`terrorbats --version`).
 - Bat Spec: `terrorbat/v1`. External adapter protocol:
   `terrorbat-adapter/v1`. These identifiers never churn cosmetically; if
   they ever change, the protocol versions, history is not rewritten.
