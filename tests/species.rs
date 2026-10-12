@@ -284,6 +284,9 @@ fn process_timeout_kills_tree_and_finds_nothing() {
     let fx = fixture("sp-proc-timeout");
     let probe = env!("CARGO_BIN_EXE_tb_probe_tree");
     let heartbeat = fx._dir.join("heartbeats.log");
+    let marker_dir = fx._dir.join("markers");
+    std::fs::create_dir_all(&marker_dir).expect("create marker dir");
+
     let yaml = format!(
         "version: terrorbat/v1\n\
          id: process-timeout\n\
@@ -293,12 +296,13 @@ fn process_timeout_kills_tree_and_finds_nothing() {
          \x20   - adapter: command\n\
          \x20     action: run\n\
          \x20     program: {}\n\
-         \x20     args: [parent, --heartbeat, {}]\n\
+         \x20     args: [parent, --heartbeat, {}, --marker-dir, {}]\n\
          oracle:\n  type: file_exists\n  path: never.txt\n\
          evidence:\n  capture: [stdout]\n\
          timeout:\n  run: 2s\n",
         common::yaml_path(Path::new(probe)),
-        common::yaml_path(&heartbeat)
+        common::yaml_path(&heartbeat),
+        common::yaml_path(&marker_dir)
     );
     let bat = write_spec(&fx.specs, "timeout.yaml", &yaml);
     let out = run_bat(&opts(&bat, &fx.repo, &fx.store)).expect("run completes");
@@ -312,6 +316,31 @@ fn process_timeout_kills_tree_and_finds_nothing() {
         out.manifest.worktree.cleanup.status,
         CleanupStatus::Succeeded
     ));
+
+    // 1. Prove that parent, child, and grandchild all independently started
+    // via both role-tagged markers and role-tagged atomic heartbeat entries.
+    for role in ["parent", "child", "grandchild"] {
+        let marker = marker_dir.join(format!("{role}.marker"));
+        assert!(
+            marker.exists(),
+            "missing {role} marker: process did not start"
+        );
+        let content = std::fs::read_to_string(&marker).expect("read marker");
+        assert!(
+            content.contains(&format!("{role}:ready")),
+            "unexpected content in {role} marker: {content}"
+        );
+    }
+
+    let hb_content = std::fs::read_to_string(&heartbeat).expect("heartbeat file must exist");
+    for role in ["parent", "child", "grandchild"] {
+        assert!(
+            hb_content.contains(&format!("{role}:alive")),
+            "heartbeat log missing {role} record: {hb_content}"
+        );
+    }
+
+    // 2. Prove all writers cease after termination and no descendants leaked.
     let before = std::fs::metadata(&heartbeat)
         .expect("heartbeats prove the tree ran")
         .len();
@@ -319,6 +348,54 @@ fn process_timeout_kills_tree_and_finds_nothing() {
     std::thread::sleep(std::time::Duration::from_millis(900));
     let after = std::fs::metadata(&heartbeat).unwrap().len();
     assert_eq!(before, after, "descendants leaked past the kill");
+}
+
+#[test]
+fn process_timeout_missing_descendant_fails_detection() {
+    let fx = fixture("sp-proc-timeout-neg");
+    let probe = env!("CARGO_BIN_EXE_tb_probe_tree");
+    let heartbeat = fx._dir.join("heartbeats.log");
+    let marker_dir = fx._dir.join("markers");
+    std::fs::create_dir_all(&marker_dir).expect("create marker dir");
+
+    // Probe invoked with --skip-grandchild: parent and child start, but grandchild is missing.
+    let yaml = format!(
+        "version: terrorbat/v1\n\
+         id: process-timeout-neg\n\
+         claim:\n  text: A timed-out tree leaves no surviving writer.\n\
+         requires:\n  - process.spawn\n\
+         attack:\n  run:\n\
+         \x20   - adapter: command\n\
+         \x20     action: run\n\
+         \x20     program: {}\n\
+         \x20     args: [parent, --heartbeat, {}, --marker-dir, {}, --skip-grandchild]\n\
+         oracle:\n  type: file_exists\n  path: never.txt\n\
+         evidence:\n  capture: [stdout]\n\
+         timeout:\n  run: 2s\n",
+        common::yaml_path(Path::new(probe)),
+        common::yaml_path(&heartbeat),
+        common::yaml_path(&marker_dir)
+    );
+    let bat = write_spec(&fx.specs, "timeout-neg.yaml", &yaml);
+    let out = run_bat(&opts(&bat, &fx.repo, &fx.store)).expect("run completes");
+    assert_eq!(out.manifest.run_status, RunStatus::TimedOut);
+    assert_eq!(out.receipt.verdict, Verdict::Inconclusive);
+
+    // Negative assertion: parent and child markers exist, but grandchild marker does NOT exist.
+    assert!(marker_dir.join("parent.marker").exists());
+    assert!(marker_dir.join("child.marker").exists());
+    assert!(
+        !marker_dir.join("grandchild.marker").exists(),
+        "grandchild should not have started under --skip-grandchild"
+    );
+
+    let hb_content = std::fs::read_to_string(&heartbeat).expect("heartbeat file must exist");
+    assert!(hb_content.contains("parent:alive"));
+    assert!(hb_content.contains("child:alive"));
+    assert!(
+        !hb_content.contains("grandchild:alive"),
+        "heartbeat log should not contain grandchild under --skip-grandchild"
+    );
 }
 
 // --- false success ---------------------------------------------------------
