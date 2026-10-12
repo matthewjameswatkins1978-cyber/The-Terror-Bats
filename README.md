@@ -14,9 +14,9 @@ Terror Bats is an **adversarial falsification framework**. Instead of asking a t
 
 It works with existing command-line tools and test runners. The core needs **no AI model, API key, cloud account, Docker, or Rust toolchain to run the prebuilt executable**.
 
-**[Start with the ZIP](#your-first-flight-windows-zip-tutorial)** · **[Read the manual](docs/MANUAL.md)** · **[See what a Bat looks like](bats/command-exit.yaml)** · **[Report an issue](../../issues)**
+**[Start with the ZIP](#your-first-flight-windows-zip-tutorial)** · **[Read the manual](docs/MANUAL.md)** · **[See what a Bat looks like](bats/command-exit.yaml)** · **[Report an issue](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats/issues)**
 
-> **Release availability:** The `v1.0.0-rc.1` Windows ZIP, Linux tarball and checksums have been built, but the GitHub release is currently a **draft**. They will appear under [Releases](../../releases) when published. Until then, follow [Build from source](#build-from-source). The published ZIP, when available, contains the executable and manuals, **not** the repository's `bats/` example directory.
+> **Release availability:** The `v1.0.0-rc.1` Windows ZIP, Linux tarball and checksums have been built, but the GitHub release is currently a **draft**. They will appear under [Releases](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats/releases) when published. Until then, follow [Build from source](#build-from-source). The published ZIP, when available, contains the executable and manuals, **not** the repository's `bats/` example directory.
 
 ---
 
@@ -96,7 +96,7 @@ The receipt schema also defines `REPRODUCED` and `SUSPECTED`, but RC1 does not m
 
 ### 1. Download and check the ZIP
 
-When the release is published, open **[GitHub Releases](../../releases)** and download:
+When the release is published, open **[GitHub Releases](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats/releases)** and download:
 
 - `terrorbats-1.0.0-rc.1-windows-x86_64.zip`
 - `SHA256SUMS.txt`
@@ -220,7 +220,7 @@ For this tutorial, use the receipt from **step 5** (the harmless Git version che
 
 ## Linux and building from source
 
-**Linux x86-64:** Once published, download `terrorbats-1.0.0-rc.1-linux-x86_64.tar.gz` and `SHA256SUMS.txt` from [Releases](../../releases). Verify the SHA-256 checksum, extract, run the bundled `install.sh --prefix "$HOME/.local"` or use the executable directly, then run `terrorbats doctor`. The [manual](docs/MANUAL.md) documents Linux paths and limitations.
+**Linux x86-64:** Once published, download `terrorbats-1.0.0-rc.1-linux-x86_64.tar.gz` and `SHA256SUMS.txt` from [Releases](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats/releases). Verify the SHA-256 checksum, extract, run the bundled `install.sh --prefix "$HOME/.local"` or use the executable directly, then run `terrorbats doctor`. The [manual](docs/MANUAL.md) documents Linux paths and limitations.
 
 **Build from source (including while the release is a draft):** requires Git and a working stable Rust toolchain.
 
@@ -233,7 +233,7 @@ cargo build --release --bin terrorbats
 .\target\release\terrorbats.exe run .\bats\command-exit.yaml --repo 'D:\path\to\your\clean-git-repo'
 ```
 
-The source checkout includes the sample Bats and packs. Build from the [`v1.0.0-rc.1` tag](../../tree/v1.0.0-rc.1) for the packaged RC1 baseline; `main` also includes newer work not necessarily present in the ZIP.
+The source checkout includes the sample Bats and packs. Build from the [`v1.0.0-rc.1` tag](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats/tree/v1.0.0-rc.1) for the packaged RC1 baseline; `main` also includes newer work not necessarily present in the ZIP.
 
 ## When you want to go further
 
