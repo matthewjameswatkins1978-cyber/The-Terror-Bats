@@ -97,44 +97,97 @@ class BridgeTests(unittest.TestCase):
                 from_environment()
 
     def test_replay_target_provenance_enforced(self):
-        # Even when run and replay are both enabled, replaying a receipt that targets
-        # a repository outside the current allowlist must fail closed and never spawn replay.
+        # Replaying a receipt that targets a repository outside the current allowlist
+        # must fail closed and never spawn replay.
+        # Furthermore, preflight uses the Rust CLI's verified `terrorbats inspect --json`,
+        # which validates canonical content identity. A forged claimant in another directory
+        # claiming an allowlisted target cannot fool authorization into replaying a forbidden target.
         permitted = Engine(Config(self.repo, self.root / "fake", self.store,
                                   {"project": self.target}, allow_run=True))
         receipt_id = "receipt:sha256:" + "b" * 64
-        # Set up a receipt in store/runs that targets an unallowlisted foreign repository
         foreign_repo = self.root / "unauthorized_foreign_project"
-        foreign_repo.mkdir()
-        run_dir = self.store / "runs" / "test-run-123"
-        run_dir.mkdir(parents=True)
-        receipt_data = {
-            "receipt_id": receipt_id,
-            "target": {"repo": str(foreign_repo), "commit": "abc"},
-        }
-        (run_dir / "receipt.json").write_text(json.dumps(receipt_data), encoding="utf-8")
+
+        def fake_cmd(cmd, *args, **kwargs):
+            if cmd == "inspect":
+                self.assertIn("--json", args)
+                # Simulated Rust CLI inspect return for the real verified receipt:
+                # It reports the canonical target repository (unauthorized foreign_repo)
+                return {
+                    "exit_code": 0,
+                    "stdout": json.dumps({
+                        "version": "terrorbat/receipt/v0",
+                        "receipt_id": receipt_id,
+                        "target": {"repo": str(foreign_repo), "commit": "abc"}
+                    }),
+                    "stderr": "",
+                    "stdout_truncated": False,
+                    "stderr_truncated": False,
+                }
+            elif cmd == "replay":
+                return {
+                    "exit_code": 0,
+                    "stdout": "replayed",
+                    "stderr": "",
+                    "stdout_truncated": False,
+                    "stderr_truncated": False,
+                }
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        # Set up a raw file in store/runs where an attacker attempts to spoof an authorized target
+        runs_dir = self.store / "runs" / "attacker-claimant"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "receipt.json").write_text(
+            json.dumps({"receipt_id": receipt_id, "target": {"repo": str(self.target)}}),
+            encoding="utf-8"
+        )
 
         with patch.dict(os.environ, {"TB_ENABLE_REPLAY": "1"}):
-            with patch.object(permitted, "_cmd") as mock_cmd:
+            with patch.object(permitted, "_cmd", side_effect=fake_cmd) as mock_cmd:
                 with self.assertRaisesRegex(BridgeError, "not in the currently allowlisted targets"):
                     permitted.replay(receipt_id)
-                mock_cmd.assert_not_called()
+                # Verify `inspect` was called, but `replay` was NEVER invoked
+                called_commands = [c[0][0] for c in mock_cmd.call_args_list]
+                self.assertEqual(called_commands, ["inspect"])
+                self.assertNotIn("replay", called_commands)
 
-        # Conversely, if receipt targets the allowlisted self.target, it is authorized to spawn replay
-        authorized_receipt_id = "receipt:sha256:" + "c" * 64
-        auth_run_dir = self.store / "runs" / "test-run-auth"
-        auth_run_dir.mkdir(parents=True)
-        auth_receipt_data = {
-            "receipt_id": authorized_receipt_id,
-            "target": {"repo": str(self.target), "commit": "def"},
-        }
-        (auth_run_dir / "receipt.json").write_text(json.dumps(auth_receipt_data), encoding="utf-8")
+        # Failure mode: if inspect fails (e.g. corrupt or missing receipt), replay must fail closed
+        with patch.dict(os.environ, {"TB_ENABLE_REPLAY": "1"}):
+            with patch.object(permitted, "_cmd", return_value={"exit_code": 1, "stdout": "", "stderr": "corrupt", "stdout_truncated": False, "stderr_truncated": False}) as mock_cmd:
+                with self.assertRaisesRegex(BridgeError, "Receipt verification failed"):
+                    permitted.replay(receipt_id)
+                mock_cmd.assert_called_once()
+                self.assertEqual(mock_cmd.call_args[0][0], "inspect")
+
+        # Success mode: if the verified canonical receipt targets the allowlisted self.target, replay proceeds
+        def fake_authorized_cmd(cmd, *args, **kwargs):
+            if cmd == "inspect":
+                return {
+                    "exit_code": 0,
+                    "stdout": json.dumps({
+                        "version": "terrorbat/receipt/v0",
+                        "receipt_id": receipt_id,
+                        "target": {"repo": str(self.target), "commit": "def"}
+                    }),
+                    "stderr": "",
+                    "stdout_truncated": False,
+                    "stderr_truncated": False,
+                }
+            elif cmd == "replay":
+                return {
+                    "exit_code": 0,
+                    "stdout": "replayed",
+                    "stderr": "",
+                    "stdout_truncated": False,
+                    "stderr_truncated": False,
+                }
+            raise AssertionError(f"unexpected command: {cmd}")
 
         with patch.dict(os.environ, {"TB_ENABLE_REPLAY": "1"}):
-            with patch.object(permitted, "_cmd", return_value={"exit_code": 0, "stdout": "replayed", "stdout_truncated": False}) as mock_cmd:
-                res = permitted.replay(authorized_receipt_id)
+            with patch.object(permitted, "_cmd", side_effect=fake_authorized_cmd) as mock_cmd:
+                res = permitted.replay(receipt_id)
                 self.assertTrue(res["ok"])
-                mock_cmd.assert_called_once()
-                self.assertEqual(mock_cmd.call_args[0][0], "replay")
+                called_commands = [c[0][0] for c in mock_cmd.call_args_list]
+                self.assertEqual(called_commands, ["inspect", "replay"])
 
 
 if __name__ == "__main__":
