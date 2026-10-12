@@ -216,7 +216,42 @@ class Engine:
         result = self._cmd("inspect", receipt_id, "--store", str(self.config.store), timeout=40)
         return {"ok": result["exit_code"] == 0, "exit_code": result["exit_code"],
                 "inspection": result["stdout"], "truncated": result["stdout_truncated"],
-                "notice": "Inspection may disclose paths or captured target data"}
+                "notice": "Inspection output is sensitive and may disclose local paths or target facts"}
+
+    def _verify_receipt_target(self, receipt_id: str) -> Path:
+        """Verify the receipt exists, is intact, and targets a currently allowlisted target directory."""
+        runs_dir = self.config.store / "runs"
+        if not runs_dir.is_dir():
+            raise BridgeError("Store runs directory is missing")
+        target_receipt_path: Path | None = None
+        for entry in runs_dir.iterdir():
+            if entry.is_dir():
+                cand = entry / "receipt.json"
+                if cand.is_file():
+                    try:
+                        data = json.loads(cand.read_text(encoding="utf-8"))
+                        if data.get("receipt_id") == receipt_id:
+                            target_receipt_path = cand
+                            break
+                    except Exception:
+                        continue
+        if target_receipt_path is None:
+            raise BridgeError("Receipt not found in evidence store")
+        try:
+            receipt_json = json.loads(target_receipt_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise BridgeError("Failed to parse receipt JSON") from exc
+        target_info = receipt_json.get("target", {})
+        repo_path_str = target_info.get("repo") or target_info.get("root")
+        if not repo_path_str:
+            raise BridgeError("Receipt does not record a target repository path")
+        resolved_repo = _real(repo_path_str)
+        allowed_paths = {p.resolve() for p in self.config.targets.values()}
+        if resolved_repo not in allowed_paths:
+            raise BridgeError(
+                f"Replay denied: receipt targets '{resolved_repo}' which is not in the currently allowlisted targets"
+            )
+        return resolved_repo
 
     def replay(self, receipt_id: str) -> dict[str, Any]:
         self._write_allowed()
@@ -224,6 +259,8 @@ class Engine:
             raise BridgeError("Replay is disabled separately; the operator must set TB_ENABLE_REPLAY=1")
         if not RECEIPT.fullmatch(receipt_id):
             raise BridgeError("Expected canonical receipt:sha256:<64 hex> identifier")
+        # Enforce that the receipt provenance binds to an allowed target before spawning replay
+        self._verify_receipt_target(receipt_id)
         result = self._cmd("replay", receipt_id, "--store", str(self.config.store))
         return {"ok": result["exit_code"] == 0, "exit_code": result["exit_code"],
                 "summary": result["stdout"], "truncated": result["stdout_truncated"]}

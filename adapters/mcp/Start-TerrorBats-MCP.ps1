@@ -76,10 +76,33 @@ if ($ShowToken) {
 }
 $venv = Join-Path $root '.venv'
 if (-not (Test-Path (Join-Path $venv 'Scripts\python.exe'))) {
-    if (Get-Command py -ErrorAction SilentlyContinue) {
+    # Prefer a working python interpreter on PATH first.
+    # Fall back to the py launcher only if verified functional (handles broken py shims/wrappers).
+    $pyHost = $null
+    if (Get-Command 'python' -ErrorAction SilentlyContinue) {
+        $ver = & python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ver -match '^3\.(1[0-9]|[2-9][0-9])') {
+            $pyHost = 'python'
+        }
+    }
+    if (-not $pyHost -and (Get-Command 'py' -ErrorAction SilentlyContinue)) {
+        & py -3.13 -c 'import sys' 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $pyHost = 'py -3.13'
+        } else {
+            & py -3 -c 'import sys' 2>$null
+            if ($LASTEXITCODE -eq 0) { $pyHost = 'py -3' }
+        }
+    }
+    if (-not $pyHost) {
+        throw 'Compatible Python (>=3.10) interpreter not found. Ensure python is on PATH.'
+    }
+    if ($pyHost -eq 'python') {
+        & python -m venv $venv
+    } elseif ($pyHost -eq 'py -3.13') {
         & py -3.13 -m venv $venv
     } else {
-        & python -m venv $venv
+        & py -3 -m venv $venv
     }
     if ($LASTEXITCODE -ne 0) { throw 'Unable to create Python environment.' }
 }

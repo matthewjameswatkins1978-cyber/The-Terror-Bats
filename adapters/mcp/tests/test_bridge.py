@@ -96,6 +96,46 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaisesRegex(BridgeError, "between 10 and 600"):
                 from_environment()
 
+    def test_replay_target_provenance_enforced(self):
+        # Even when run and replay are both enabled, replaying a receipt that targets
+        # a repository outside the current allowlist must fail closed and never spawn replay.
+        permitted = Engine(Config(self.repo, self.root / "fake", self.store,
+                                  {"project": self.target}, allow_run=True))
+        receipt_id = "receipt:sha256:" + "b" * 64
+        # Set up a receipt in store/runs that targets an unallowlisted foreign repository
+        foreign_repo = self.root / "unauthorized_foreign_project"
+        foreign_repo.mkdir()
+        run_dir = self.store / "runs" / "test-run-123"
+        run_dir.mkdir(parents=True)
+        receipt_data = {
+            "receipt_id": receipt_id,
+            "target": {"repo": str(foreign_repo), "commit": "abc"},
+        }
+        (run_dir / "receipt.json").write_text(json.dumps(receipt_data), encoding="utf-8")
+
+        with patch.dict(os.environ, {"TB_ENABLE_REPLAY": "1"}):
+            with patch.object(permitted, "_cmd") as mock_cmd:
+                with self.assertRaisesRegex(BridgeError, "not in the currently allowlisted targets"):
+                    permitted.replay(receipt_id)
+                mock_cmd.assert_not_called()
+
+        # Conversely, if receipt targets the allowlisted self.target, it is authorized to spawn replay
+        authorized_receipt_id = "receipt:sha256:" + "c" * 64
+        auth_run_dir = self.store / "runs" / "test-run-auth"
+        auth_run_dir.mkdir(parents=True)
+        auth_receipt_data = {
+            "receipt_id": authorized_receipt_id,
+            "target": {"repo": str(self.target), "commit": "def"},
+        }
+        (auth_run_dir / "receipt.json").write_text(json.dumps(auth_receipt_data), encoding="utf-8")
+
+        with patch.dict(os.environ, {"TB_ENABLE_REPLAY": "1"}):
+            with patch.object(permitted, "_cmd", return_value={"exit_code": 0, "stdout": "replayed", "stdout_truncated": False}) as mock_cmd:
+                res = permitted.replay(authorized_receipt_id)
+                self.assertTrue(res["ok"])
+                mock_cmd.assert_called_once()
+                self.assertEqual(mock_cmd.call_args[0][0], "replay")
+
 
 if __name__ == "__main__":
     unittest.main()
