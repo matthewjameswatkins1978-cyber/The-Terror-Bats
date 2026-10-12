@@ -17,14 +17,18 @@ fn main() {
             i += 1;
         }
     }
-    // Open the heartbeat file BEFORE spawning descendants, so the file's
-    // existence never depends on winning a race with the supervisor.
+    // Open the heartbeat file BEFORE spawning descendants, and immediately
+    // emit the first heartbeat, so the file's existence and initial proof of
+    // life never depend on winning a race with the supervisor.
     let mut heartbeat_file = heartbeat.map(|path| {
-        std::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-            .unwrap()
+            .unwrap();
+        let _ = writeln!(file, "alive");
+        let _ = file.flush();
+        file
     });
     match mode {
         "parent" => spawn_next("child", heartbeat),
