@@ -56,7 +56,13 @@ fn main() {
         }
         "child" => {
             if !skip_grandchild {
-                spawn_next("grandchild", heartbeat, marker_dir, skip_child, skip_grandchild);
+                spawn_next(
+                    "grandchild",
+                    heartbeat,
+                    marker_dir,
+                    skip_child,
+                    skip_grandchild,
+                );
             }
         }
         "grandchild" => {}
