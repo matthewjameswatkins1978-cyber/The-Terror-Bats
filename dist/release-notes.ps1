@@ -55,7 +55,8 @@ This is a **release candidate for evaluation**, not a certification, a security 
 2. Check the ZIP hash against the checksum file:
 
    ```powershell
-   Get-FileHash .\terrorbats-1.0.0-rc.1-windows-x86_64.zip -Algorithm SHA256
+   $zip = Get-ChildItem . -Filter 'terrorbats-*-windows-x86_64.zip' | Select-Object -First 1
+   Get-FileHash $zip.FullName -Algorithm SHA256
    Get-Content .\SHA256SUMS.txt
    ```
 
@@ -70,7 +71,7 @@ This is a **release candidate for evaluation**, not a certification, a security 
 
 **Linux:** Check `SHA256SUMS.txt`, extract the tarball, use `install.sh --prefix "$HOME/.local"` if desired, and run `terrorbats --version` and `terrorbats doctor`.
 
-The Windows binary is **not Authenticode-signed**. The release provenance and SHA-256 checksums should be checked before use.
+The Windows release-candidate binary is **not Authenticode-signed**. The release provenance and SHA-256 checksums should be checked before use.
 
 ## What this release is not
 
@@ -80,7 +81,7 @@ The Windows binary is **not Authenticode-signed**. The release provenance and SH
 - **Not a general-purpose fuzzer or browser runner:** use established specialist tools where those jobs fit.
 - **Not full process containment:** the process adapter stays `builtin-partial`; escaped descendants are unsupported.
 
-The source repository's separately maintained MCP adapter is **not included in these RC1 binary archives**. MCP replay is disabled in its initial bridge release.
+The source repository's separately maintained MCP adapter is **not included in these core binary archives**. MCP replay is disabled in its initial bridge release.
 
 ## Learn more and help improve it
 
