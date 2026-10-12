@@ -1,2 +1,5 @@
 /target
 /.threadmoth
+__pycache__/
+*.py[cod]
+.terrorbats-mcp-evidence/
