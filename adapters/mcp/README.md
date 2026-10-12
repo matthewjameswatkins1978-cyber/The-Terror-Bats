@@ -6,7 +6,7 @@ A **working integration build**, not a second testing engine. The existing Terro
 
 - **Works locally:** launch a standard MCP stdio server for agent clients, or a bearer-protected HTTP server bound to `127.0.0.1:4319`.
 - **Can work with ChatGPT:** once the HTTP endpoint is exposed by a *secure HTTPS tunnel* and registered as a **custom MCP server** in ChatGPT, the tools can be called there. Merely installing this ZIP does not give ChatGPT remote access. You must verify live tool discovery and one real call before claiming the connection works.
-- **Default is read-only:** `tb_run` and `tb_replay` fail closed. Enabling execution requires `TB_ENABLE_RUN=1` and an explicit named-target allowlist. Replay requires `TB_ENABLE_REPLAY=1` separately because stored receipts can target old state.
+- **Default is read-only:** `tb_run` fails closed unless `TB_ENABLE_RUN=1` and an explicit named-target allowlist is configured. `tb_replay` is unconditionally disabled in MCP v0.1.0 pending M2 cryptographic target provenance gating; the authoritative Terror Bats CLI remains available directly for receipt replay.
 - The bridge never accepts arbitrary shell commands, GitHub refs, or target filesystem paths from an assistant. It uses subprocess argument arrays (no shell), bounded waits and output, refuses Bat-path escape, and returns only verdict/receipt metadata for a new run, not captured child output.
 - **Not a sandbox:** the tests you explicitly author may run programs with the operating system user's privileges; worktrees are not containment. Captured child output/evidence may contain secrets. Do not expose the local port directly to the internet or enable execution on projects you cannot afford to alter.
 

@@ -67,10 +67,9 @@ def build_server(http: bool = False):
 
     @mcp.tool
     def tb_replay(receipt_id: str) -> dict:
-        """Re-execute an existing test receipt, which can have real side effects.
+        """Re-execution of test receipts is deferred in MCP v0.1.0 pending M2 provenance gating.
 
-        Disabled unless TB_ENABLE_RUN=1 AND TB_ENABLE_REPLAY=1,
-        and the host authorises the tool call.
+        Unconditionally unavailable in this build.
         """
         try:
             return engine().replay(receipt_id)

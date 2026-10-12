@@ -247,13 +247,8 @@ class Engine:
         return resolved_repo
 
     def replay(self, receipt_id: str) -> dict[str, Any]:
-        self._write_allowed()
-        if os.environ.get("TB_ENABLE_REPLAY", "0") != "1":
-            raise BridgeError("Replay is disabled separately; the operator must set TB_ENABLE_REPLAY=1")
-        if not RECEIPT.fullmatch(receipt_id):
-            raise BridgeError("Expected canonical receipt:sha256:<64 hex> identifier")
-        # Enforce that the receipt provenance binds to an allowed target before spawning replay
-        self._verify_receipt_target(receipt_id)
-        result = self._cmd("replay", receipt_id, "--store", str(self.config.store))
-        return {"ok": result["exit_code"] == 0, "exit_code": result["exit_code"],
-                "summary": result["stdout"], "truncated": result["stdout_truncated"]}
+        """Replay is unconditionally disabled in MCP v0.1.0 pending M2 cryptographic target gating."""
+        raise BridgeError(
+            "Replay via MCP is unconditionally disabled in v0.1.0. "
+            "Use the authoritative Terror Bats CLI directly for verified receipt replay, or defer to M2."
+        )
