@@ -252,6 +252,10 @@ pub fn run(cmd: &SupervisedCommand, cancel: &CancelToken) -> SupervisedOutcome {
             };
         }
     };
+    // Anchor deadline enforcement to when the child process tree is actually
+    // running, rather than penalising child execution for Windows process creation
+    // and Job Object setup latency.
+    let child_started = Instant::now();
 
     let mut stdout_pump = child
         .inner()
@@ -301,7 +305,7 @@ pub fn run(cmd: &SupervisedCommand, cancel: &CancelToken) -> SupervisedOutcome {
             if cancel.is_cancelled() {
                 phase = Phase::terminating(ExecutionStatus::Cancelled);
             } else if let Some(deadline) = cmd.deadline
-                && started.elapsed() >= deadline
+                && child_started.elapsed() >= deadline
             {
                 phase = Phase::terminating(ExecutionStatus::TimedOut);
             }
