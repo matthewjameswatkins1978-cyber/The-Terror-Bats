@@ -34,3 +34,17 @@ jobs:
         run: |
           cargo build --release --bin terrorbats
           bash dist/smoke-linux-bundle.sh --workflow 'pr/${{ github.event.pull_request.number || github.sha }}'
+
+  mcp-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run MCP bridge unit tests
+        run: python -m unittest discover -s adapters/mcp/tests -v
+      - name: Test packaging and wheel build
+        run: |
+          pip install --upgrade build pip
+          python -m build adapters/mcp
