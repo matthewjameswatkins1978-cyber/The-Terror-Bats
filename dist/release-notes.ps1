@@ -33,7 +33,7 @@ The Terror Bats Framework is a language-agnostic **adversarial falsification** t
 - **Keep evidence, not just a pass/fail string.** Receipts tie an attack to a Git commit, execution status, oracle decision, and captured artifacts.
 - **Replay a particular experiment.** The original evidence remains intact while a new run records what changed.
 - **Bring your own stack.** Run existing commands, verifiers and tools; no AI, API key, Docker, or cloud account is required for core execution.
-- **Be precise about uncertainty.** `PROVEN` means a claim was falsified under recorded conditions; `NOT OBSERVED` does not mean safe or correct; a timeout is `INCONCLUSIVE`.
+- **Be precise about uncertainty.** PROVEN means the tested claim was falsified under recorded conditions. `NOT OBSERVED` does not mean safe or correct; a timeout is `INCONCLUSIVE`.
 
 **Compared with unit tests:** Terror Bats operates one layer above individual assertions, arranging attacks and recording what those attacks establish. **Compared with fuzzers:** you define the attack and oracle rather than relying on built-in input generation. **Compared with CI:** it supplies the structured evidence and receipt that a CI job can run and archive. These tools complement one another; no general performance or bug-detection superiority is claimed.
 
@@ -42,7 +42,7 @@ The Terror Bats Framework is a language-agnostic **adversarial falsification** t
 - Windows x86-64 ZIP and Linux x86-64 tarball
 - `terrorbats` CLI, installer helpers, manuals and checksums
 - Declarative Bat Specs, Git worktree-backed runs and deterministic oracles
-- Supervised command and partial stateful-process adapters
+- Supervised command and partial stateful `process` adapters
 - Evidence objects, content-addressed receipts and local replay
 - Packs, serial campaigns and an external JSONL adapter protocol
 - `doctor`, shell completions and generated command reference
@@ -52,7 +52,7 @@ This is a **release candidate for evaluation**, not a certification, a security 
 ## First flight from the Windows ZIP
 
 1. Download the Windows ZIP **and** `SHA256SUMS.txt` from this release.
-2. Check the ZIP hash against the checksum file:
+2. Check the ZIP hash with `Get-FileHash -Algorithm SHA256` against the checksum file:
 
    ```powershell
    $zip = Get-ChildItem . -Filter 'terrorbats-*-windows-x86_64.zip' | Select-Object -First 1
@@ -60,7 +60,7 @@ This is a **release candidate for evaluation**, not a certification, a security 
    Get-Content .\SHA256SUMS.txt
    ```
 
-3. Extract the ZIP. From the extracted directory, run:
+3. Extract the ZIP. The bundled `install.ps1` optionally installs user-locally without admin rights. From the extracted directory, run:
 
    ```powershell
    .\terrorbats.exe --version
@@ -69,7 +69,7 @@ This is a **release candidate for evaluation**, not a certification, a security 
 
 4. For a **zero-Rust, zero-admin** first lesson that creates a harmless Git repo and a Bat, follow the [README's Windows ZIP tutorial](https://github.com/matthewjameswatkins1978-cyber/The-Terror-Bats#your-first-flight-windows-zip-tutorial). The binary bundle contains the manual but **not** the repository's `bats/` sample directory.
 
-**Linux:** Check `SHA256SUMS.txt`, extract the tarball, use `install.sh --prefix "$HOME/.local"` if desired, and run `terrorbats --version` and `terrorbats doctor`.
+**Linux:** Verify with `sha256sum -c SHA256SUMS.txt`, extract the tarball, optionally use `install.sh --prefix $HOME/.local`, then run `terrorbats --version` and `terrorbats doctor`.
 
 The Windows release-candidate binary is **not Authenticode-signed**. The release provenance and SHA-256 checksums should be checked before use.
 
